@@ -89,6 +89,68 @@ func Evaluate(node *Node, x float64) (float64, error) {
 		}
 		return result, nil
 
+	case NodePow:
+		// Ambos hijos se evalúan como cualquier operador binario.
+		l, r, err := evalBoth(node, x)
+		if err != nil {
+			return 0, err
+		}
+		// Caso especial explícito: 0 con exponente negativo → Inf.
+		// finiteOr lo capturaría de todas formas, pero el mensaje es más claro así.
+		if l == 0 && r < 0 {
+			return 0, &EvalError{Msg: fmt.Sprintf("0 raised to negative exponent: %v", r)}
+		}
+		result := math.Pow(l, r)
+		// finiteOr captura:
+		//   - NaN  → base negativa con exponente no entero (e.g. (-2)^0.5)
+		//   - ±Inf → overflow o Pow(0, neg) si no fue capturado arriba
+		return finiteOr(result, "^", l, r)
+
+	case NodeAbs:
+		arg, err := Evaluate(node.Left, x)
+		if err != nil {
+			return 0, err
+		}
+		// math.Abs es seguro para cualquier float64 finito; nunca produce NaN/Inf.
+		return math.Abs(arg), nil
+
+	case NodeExp:
+		arg, err := Evaluate(node.Left, x)
+		if err != nil {
+			return 0, err
+		}
+		result := math.Exp(arg)
+		// math.Exp puede producir +Inf (overflow) pero nunca NaN para arg finito.
+		if math.IsInf(result, 0) {
+			return 0, &EvalError{Msg: fmt.Sprintf("exp overflow: exp(%v)", arg)}
+		}
+		return result, nil
+
+	case NodeSin:
+		arg, err := Evaluate(node.Left, x)
+		if err != nil {
+			return 0, err
+		}
+		result := math.Sin(arg)
+		// Para arg finito, sin siempre devuelve un valor en [-1, 1].
+		// El chequeo es defensivo: cubriría el caso (teóricamente imposible aquí)
+		// de que un arg finito produjera NaN/Inf.
+		if math.IsNaN(result) || math.IsInf(result, 0) {
+			return 0, &EvalError{Msg: fmt.Sprintf("non-finite sin(%v)", arg)}
+		}
+		return result, nil
+
+	case NodeCos:
+		arg, err := Evaluate(node.Left, x)
+		if err != nil {
+			return 0, err
+		}
+		result := math.Cos(arg)
+		if math.IsNaN(result) || math.IsInf(result, 0) {
+			return 0, &EvalError{Msg: fmt.Sprintf("non-finite cos(%v)", arg)}
+		}
+		return result, nil
+
 	default:
 		return 0, &EvalError{Msg: fmt.Sprintf("unknown node type: %d", node.Type)}
 	}

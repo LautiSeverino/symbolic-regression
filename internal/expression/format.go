@@ -29,6 +29,16 @@ func Format(node *Node) string {
 		return fmt.Sprintf("sqrt(%s)", Format(node.Left))
 	case NodeLn:
 		return fmt.Sprintf("ln(%s)", Format(node.Left))
+	case NodePow:
+		return fmt.Sprintf("(%s ^ %s)", Format(node.Left), Format(node.Right))
+	case NodeAbs:
+		return fmt.Sprintf("abs(%s)", Format(node.Left))
+	case NodeExp:
+		return fmt.Sprintf("exp(%s)", Format(node.Left))
+	case NodeSin:
+		return fmt.Sprintf("sin(%s)", Format(node.Left))
+	case NodeCos:
+		return fmt.Sprintf("cos(%s)", Format(node.Left))
 	default:
 		return fmt.Sprintf("<node:%d>", node.Type)
 	}

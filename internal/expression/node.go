@@ -12,7 +12,11 @@ const (
 	NodeDiv                      // binario: left / right
 	NodeSqrt                     // unario: sqrt(left)  — Fase 2
 	NodeLn                       // unario: ln(left)    — Fase 2
-	// Fase 8 agregará: NodePow, NodeAbs, NodeExp, NodeSin, NodeCos
+	NodePow                      // binario: left ^ right — Fase 8
+	NodeAbs                      // unario: abs(left)    — Fase 8
+	NodeExp                      // unario: exp(left)    — Fase 8
+	NodeSin                      // unario: sin(left)    — Fase 8
+	NodeCos                      // unario: cos(left)    — Fase 8
 )
 
 // Node es un elemento del árbol de expresión.

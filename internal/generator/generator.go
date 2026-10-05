@@ -30,6 +30,16 @@ type Config struct {
 	// Typical range: 0.1–0.4.
 	TerminalProbability float64 // must be in [0, 1]
 
+	// PowExponentMin and PowExponentMax constrain the exponent generated when
+	// NodePow is selected as operator. The generator always produces an integer
+	// constant in [PowExponentMin, PowExponentMax] as the right child of NodePow.
+	// These fields are ignored when NodePow is not in AllowedBinaryOps.
+	// PowExponentMin must be ≤ PowExponentMax.
+	// Note: crossover and mutation may produce NodePow with arbitrary exponents;
+	// the evaluator handles those cases safely via EvalError / finiteOr.
+	PowExponentMin int // e.g. -4
+	PowExponentMax int // e.g.  4
+
 	Seed int64 // RNG seed; same seed + same config → same sequence
 }
 
@@ -49,6 +59,8 @@ func Default() Config {
 		ConstantMax:         10,
 		VariableProbability: 0.5,
 		TerminalProbability: 0.3,
+		PowExponentMin:      -4,
+		PowExponentMax:      4,
 		Seed:                0,
 	}
 }
@@ -80,6 +92,10 @@ func New(cfg Config) (*Generator, error) {
 	if cfg.VariableProbability < 0 || cfg.VariableProbability > 1 {
 		return nil, fmt.Errorf("generator: VariableProbability must be in [0, 1], got %v",
 			cfg.VariableProbability)
+	}
+	if cfg.PowExponentMin > cfg.PowExponentMax {
+		return nil, fmt.Errorf("generator: PowExponentMin (%d) > PowExponentMax (%d)",
+			cfg.PowExponentMin, cfg.PowExponentMax)
 	}
 	return &Generator{
 		cfg: cfg,
@@ -139,11 +155,37 @@ func (g *Generator) grow(depth, budget int) *expression.Node {
 }
 
 // buildBinary generates a binary operator node and distributes the node budget
-// between its children. The left child receives half the child budget; the right
-// child receives the actual remainder after the left subtree is built. This
-// guarantees MaxNodes is never exceeded regardless of how the left subtree grows.
+// between its children.
+//
+// NodePow special case: the right child is always a single integer constant in
+// [PowExponentMin, PowExponentMax]. This keeps generated trees mathematically
+// meaningful and avoids producing complex exponent subtrees that the evaluator
+// would almost certainly reject as NaN or Inf. The left child (the base) gets
+// budget−2 nodes (one consumed by NodePow itself, one reserved for the constant).
+//
+// All other binary operators: the left child receives half the child budget;
+// the right child receives the actual remainder after the left subtree is built.
+// This guarantees MaxNodes is never exceeded regardless of how the left subtree grows.
 func (g *Generator) buildBinary(depth, budget int) *expression.Node {
 	op := g.cfg.AllowedBinaryOps[g.rng.Intn(len(g.cfg.AllowedBinaryOps))]
+
+	if op == expression.NodePow {
+		// budget ≥ 3 (guaranteed by canBinary check in grow)
+		// Layout: 1 (NodePow) + count(left) + 1 (constant) ≤ budget
+		leftBudget := budget - 2
+		if leftBudget < 1 {
+			leftBudget = 1
+		}
+		left := g.grow(depth+1, leftBudget)
+
+		rangeSize := g.cfg.PowExponentMax - g.cfg.PowExponentMin + 1
+		if rangeSize < 1 {
+			rangeSize = 1
+		}
+		exp := float64(g.cfg.PowExponentMin + g.rng.Intn(rangeSize))
+		return expression.NewBinary(expression.NodePow, left, expression.NewConstant(exp))
+	}
+
 	childBudget := budget - 1 // this node consumes one slot
 
 	leftBudget := childBudget / 2
