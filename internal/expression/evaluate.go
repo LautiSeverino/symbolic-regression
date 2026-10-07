@@ -6,8 +6,21 @@ import (
 )
 
 // EvalError es retornado cuando una expresión no puede evaluarse en un punto dado.
-// Causas: división por cero, overflow, NaN, sqrt de negativos, ln de no positivos.
-// Fase 8 agregará: pow con exponentes inválidos, dominios de otras funciones.
+//
+// Causas posibles:
+//   - Constante no finita (NaN o ±Inf) — entrada inválida en nodo hoja
+//   - División por cero
+//   - Overflow aritmético (resultado NaN/Inf)
+//   - sqrt de argumento negativo
+//   - ln de argumento no positivo
+//   - 0 elevado a exponente negativo
+//   - Base negativa con exponente no entero (resultado complejo/NaN)
+//   - exp con argumento que produce +Inf (overflow)
+//
+// Políticas numéricas adoptadas:
+//   - 0^0 = 1    (convención Go/IEEE-754; math.Pow(0,0) = 1)
+//   - exp(underflow) = 0   (desbordamiento a cero es un float64 válido, no error)
+//   - abs, sin, cos de argumento finito → resultado siempre finito, no error
 type EvalError struct {
 	Msg string
 }
@@ -28,6 +41,12 @@ func Evaluate(node *Node, x float64) (float64, error) {
 		return x, nil
 
 	case NodeConstant:
+		// Guard: una constante no finita propagaría NaN/Inf silenciosamente por todo el árbol.
+		// El generador y las mutaciones siempre producen constantes finitas, pero quien
+		// construya nodos manualmente (tests, extensiones) podría producir valores inválidos.
+		if math.IsNaN(node.Value) || math.IsInf(node.Value, 0) {
+			return 0, &EvalError{Msg: fmt.Sprintf("non-finite constant: %v", node.Value)}
+		}
 		return node.Value, nil
 
 	case NodeAdd:
@@ -111,8 +130,14 @@ func Evaluate(node *Node, x float64) (float64, error) {
 		if err != nil {
 			return 0, err
 		}
-		// math.Abs es seguro para cualquier float64 finito; nunca produce NaN/Inf.
-		return math.Abs(arg), nil
+		result := math.Abs(arg)
+		// math.Abs es seguro para arg finito: siempre devuelve un valor en [0, +MaxFloat64].
+		// El check es defensa en profundidad: con el guard en NodeConstant y la validación
+		// del dataset, arg nunca debería ser no-finito en condiciones normales.
+		if math.IsNaN(result) || math.IsInf(result, 0) {
+			return 0, &EvalError{Msg: fmt.Sprintf("non-finite abs(%v)", arg)}
+		}
+		return result, nil
 
 	case NodeExp:
 		arg, err := Evaluate(node.Left, x)
