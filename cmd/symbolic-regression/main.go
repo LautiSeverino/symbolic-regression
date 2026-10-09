@@ -13,6 +13,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/LautiSeverino/symbolic-regression/internal/dataset"
@@ -39,7 +40,7 @@ func main() {
 	}
 
 	fmt.Println("══════════════════════════════════════════")
-	fmt.Println("  Regresión Simbólica Evolutiva — Fase 7")
+	fmt.Println("  Regresión Simbólica Evolutiva — Fase 10")
 	fmt.Println("══════════════════════════════════════════")
 	fmt.Println()
 
@@ -62,6 +63,8 @@ func main() {
 	fmt.Println()
 
 	// ── 3. Configuración del algoritmo genético ───────────────────────────
+	numWorkers := runtime.NumCPU()
+
 	cfg := genetic.Config{
 		PopulationSize: 500,
 		Generations:    200,
@@ -71,6 +74,7 @@ func main() {
 		CrossoverRate:  0.80,
 		Lambda:         0.01,
 		Seed:           seed,
+		Workers:        numWorkers,
 		GenConfig: generator.Config{
 			MaxDepth: 5,
 			MaxNodes: 30,
@@ -87,9 +91,9 @@ func main() {
 		},
 	}
 
-	fmt.Printf("Config   : pop=%d | gen=%d | depth=%d | nodes=%d | seed=%d\n",
+	fmt.Printf("Config   : pop=%d | gen=%d | depth=%d | nodes=%d | workers=%d | seed=%d\n",
 		cfg.PopulationSize, cfg.Generations,
-		cfg.GenConfig.MaxDepth, cfg.GenConfig.MaxNodes, seed)
+		cfg.GenConfig.MaxDepth, cfg.GenConfig.MaxNodes, cfg.Workers, seed)
 	fmt.Printf("Fitness  : MSE + λ·complexity  (λ=%.3f)\n", cfg.Lambda)
 	fmt.Println()
 	fmt.Printf("%-12s  %-14s  %-14s  %-8s  %s\n",
@@ -150,7 +154,7 @@ func main() {
 	fmt.Printf("Generations    : %d\n", cfg.Generations)
 	fmt.Printf("Population     : %d\n", cfg.PopulationSize)
 	fmt.Printf("Total evals    : %d\n", totalEvals)
-	fmt.Printf("Workers        : 1 (secuencial — ver Fase 10)\n")
+	fmt.Printf("Workers        : %d\n", cfg.Workers)
 	fmt.Printf("Seed           : %d\n", seed)
 	fmt.Printf("Elapsed        : %s\n", elapsed.Round(time.Millisecond))
 }

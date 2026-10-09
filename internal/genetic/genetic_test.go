@@ -25,6 +25,7 @@ func testCfg() genetic.Config {
 		CrossoverRate:  0.8,
 		Lambda:         0.01,
 		Seed:           42,
+		Workers:        1,
 		GenConfig: generator.Config{
 			MaxDepth:            4,
 			MaxNodes:            15,

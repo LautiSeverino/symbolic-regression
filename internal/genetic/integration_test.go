@@ -34,6 +34,7 @@ func integrationCfg(seed int64) genetic.Config {
 		CrossoverRate:  0.80,
 		Lambda:         0.01,
 		Seed:           seed,
+		Workers:        1,
 		GenConfig: generator.Config{
 			MaxDepth: 5,
 			MaxNodes: 30,

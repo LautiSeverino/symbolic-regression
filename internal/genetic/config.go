@@ -35,6 +35,19 @@ type Config struct {
 	Lambda         float64 // peso de la penalización de complejidad en el fitness
 	Seed           int64   // semilla del RNG del GA; Seed+1 se usa para el generador
 
+	// Workers es el número de goroutines del worker pool usado para evaluar fitness.
+	//
+	// Workers = 1  → evaluación secuencial (un único worker; comportamiento equivalente
+	//                a la implementación anterior sin pool).
+	// Workers > 1  → evaluación paralela; los workers comparten solo lectura de e.ds.
+	// Workers <= 0 → normalizado a 1 automáticamente en NewEvolution.
+	//
+	// La evaluación de fitness es la única sección paralelizada. La generación
+	// de descendencia (selección, crossover, mutación) permanece secuencial para
+	// preservar el determinismo del RNG: misma seed + misma config → mismo resultado,
+	// independientemente del número de workers.
+	Workers int
+
 	// GenConfig controla la generación de árboles aleatorios
 	// (para la población inicial y para la mutación de subárboles).
 	GenConfig generator.Config
@@ -57,11 +70,13 @@ func DefaultConfig() Config {
 		CrossoverRate:  0.80,
 		Lambda:         0.01,
 		Seed:           0,
+		Workers:        1,
 		GenConfig:      generator.Default(),
 	}
 }
 
 // validate verifica que cfg tiene valores coherentes.
+// Workers no se valida aquí; la normalización (≤ 0 → 1) ocurre en NewEvolution.
 func (cfg Config) validate() error {
 	if cfg.PopulationSize < 2 {
 		return fmt.Errorf("genetic: PopulationSize must be ≥ 2, got %d", cfg.PopulationSize)
@@ -85,6 +100,7 @@ func (cfg Config) validate() error {
 	if cfg.CrossoverRate < 0 || cfg.CrossoverRate > 1 {
 		return fmt.Errorf("genetic: CrossoverRate must be in [0, 1], got %v", cfg.CrossoverRate)
 	}
+	// Workers ya fue normalizado en NewEvolution; aquí cfg.Workers >= 1.
 	return nil
 }
 
