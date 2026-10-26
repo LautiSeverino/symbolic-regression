@@ -12,20 +12,30 @@ import (
 
 // Evolution ejecuta el algoritmo genético con evaluación de fitness paralela.
 //
-// La paralelización se limita al cálculo de fitness (evaluatePopulation).
-// La generación de descendencia — selección, crossover, mutación — permanece
-// secuencial y usa e.rng de forma exclusiva, lo que garantiza que misma seed +
-// misma config produce exactamente el mismo resultado con cualquier Workers.
+// ds es exclusivamente el dataset de entrenamiento.
+// val, si no es nil, se usa para una única evaluación post-evolución sobre
+// el mejor individuo final. Nunca participa en selección, crossover,
+// mutación, cálculo de fitness evolutivo ni en el callback OnGeneration.
 type Evolution struct {
 	cfg Config
 	rng *rand.Rand           // RNG del GA, exclusivo del goroutine principal
-	ds  *dataset.Dataset     // dataset de training, read-only después de la construcción
+	ds  *dataset.Dataset     // dataset de entrenamiento (read-only post-construcción)
+	val *dataset.Dataset     // dataset de validación; nil = sin validación
 	gen *generator.Generator // para población inicial y mutación de subárboles
 }
 
 // NewEvolution valida cfg, normaliza Workers, construye el generador y retorna
 // una Evolution lista para usar.
-func NewEvolution(cfg Config, ds *dataset.Dataset) (*Evolution, error) {
+//
+// train es el dataset de entrenamiento (obligatorio, no nil ni vacío).
+// val es el dataset de validación (opcional):
+//   - nil   → sin validación; Individual.ValidationResult siempre nil.
+//   - vacío → error explícito (use nil para omitir validación).
+//
+// val nunca afecta la evolución: selección, crossover, mutación y fitness
+// operan exclusivamente sobre train. La evaluación sobre val ocurre una única
+// vez al final de Run(), sobre el mejor individuo final, con lambda=0.
+func NewEvolution(cfg Config, train, val *dataset.Dataset) (*Evolution, error) {
 	// Normalizar Workers antes de validate: ≤ 0 → 1.
 	if cfg.Workers <= 0 {
 		cfg.Workers = 1
@@ -34,8 +44,13 @@ func NewEvolution(cfg Config, ds *dataset.Dataset) (*Evolution, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
-	if ds == nil || ds.Len() == 0 {
-		return nil, fmt.Errorf("genetic: dataset is nil or empty")
+	if train == nil || train.Len() == 0 {
+		return nil, fmt.Errorf("genetic: training dataset is nil or empty")
+	}
+	// val == nil es válido (sin validación).
+	// val con 0 puntos es error: distingue "omitir validación" de "dataset roto".
+	if val != nil && val.Len() == 0 {
+		return nil, fmt.Errorf("genetic: validation dataset must not be empty (pass nil to skip validation)")
 	}
 	gen, err := generator.New(cfg.GenConfig)
 	if err != nil {
@@ -44,7 +59,8 @@ func NewEvolution(cfg Config, ds *dataset.Dataset) (*Evolution, error) {
 	return &Evolution{
 		cfg: cfg,
 		rng: rand.New(rand.NewSource(cfg.Seed)),
-		ds:  ds,
+		ds:  train,
+		val: val,
 		gen: gen,
 	}, nil
 }
@@ -103,6 +119,18 @@ func (e *Evolution) Run() (*Individual, error) {
 		if e.cfg.OnGeneration != nil {
 			e.cfg.OnGeneration(gen, globalBest)
 		}
+	}
+
+	// Evaluar sobre el dataset de validación exactamente una vez, después
+	// de que la evolución terminó. lambda=0: MSE puro sin penalización de
+	// complejidad (el spec reporta "Validation MSE", no "Validation Fitness").
+	// Esta evaluación no modifica el RNG ni los resultados de entrenamiento.
+	if e.val != nil {
+		valResult, err := fitness.Evaluate(globalBest.Expr, e.val, 0)
+		if err != nil {
+			return nil, fmt.Errorf("genetic: validation evaluation failed: %w", err)
+		}
+		globalBest.ValidationResult = &valResult
 	}
 
 	return &globalBest, nil

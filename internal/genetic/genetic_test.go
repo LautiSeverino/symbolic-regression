@@ -8,8 +8,8 @@ import (
 	"github.com/LautiSeverino/symbolic-regression/internal/dataset"
 	"github.com/LautiSeverino/symbolic-regression/internal/expression"
 	"github.com/LautiSeverino/symbolic-regression/internal/fitness"
-	"github.com/LautiSeverino/symbolic-regression/internal/genetic"
 	"github.com/LautiSeverino/symbolic-regression/internal/generator"
+	"github.com/LautiSeverino/symbolic-regression/internal/genetic"
 )
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ func walkAllTest(node *expression.Node, fn func(*expression.Node)) {
 // ─── NewEvolution ─────────────────────────────────────────────────────────
 
 func TestNewEvolution_Valid(t *testing.T) {
-	evol, err := genetic.NewEvolution(testCfg(), testDS())
+	evol, err := genetic.NewEvolution(testCfg(), testDS(), nil)
 	if err != nil {
 		t.Fatalf("error inesperado: %v", err)
 	}
@@ -79,7 +79,9 @@ func TestNewEvolution_Invalid(t *testing.T) {
 		{"Generations<1", func() genetic.Config { c := base; c.Generations = 0; return c }()},
 		{"TournamentSize<2", func() genetic.Config { c := base; c.TournamentSize = 1; return c }()},
 		{"TournamentSize>Pop", func() genetic.Config {
-			c := base; c.TournamentSize = base.PopulationSize + 1; return c
+			c := base
+			c.TournamentSize = base.PopulationSize + 1
+			return c
 		}()},
 		{"ElitismRate>=1", func() genetic.Config { c := base; c.ElitismRate = 1.0; return c }()},
 		{"MutationRate>1", func() genetic.Config { c := base; c.MutationRate = 1.1; return c }()},
@@ -91,7 +93,7 @@ func TestNewEvolution_Invalid(t *testing.T) {
 			if tc.name != "DatasetNil" {
 				ds = testDS()
 			}
-			_, err := genetic.NewEvolution(tc.cfg, ds)
+			_, err := genetic.NewEvolution(tc.cfg, ds, nil)
 			if err == nil {
 				t.Error("se esperaba error para config/dataset inválido, se obtuvo nil")
 			}
@@ -99,11 +101,40 @@ func TestNewEvolution_Invalid(t *testing.T) {
 	}
 }
 
+// ─── Validación del dataset de validación ─────────────────────────────────
+
+func TestNewEvolution_ValidationDatasetValidation(t *testing.T) {
+	train := testDS()
+
+	t.Run("nil val es válido", func(t *testing.T) {
+		_, err := genetic.NewEvolution(testCfg(), train, nil)
+		if err != nil {
+			t.Errorf("val=nil: error inesperado: %v", err)
+		}
+	})
+
+	t.Run("val con puntos es válido", func(t *testing.T) {
+		val := dataset.New([]dataset.Point{{X: 6, Y: 13}, {X: 7, Y: 15}})
+		_, err := genetic.NewEvolution(testCfg(), train, val)
+		if err != nil {
+			t.Errorf("val con puntos: error inesperado: %v", err)
+		}
+	})
+
+	t.Run("val vacío es error", func(t *testing.T) {
+		val := dataset.New(nil) // non-nil, 0 puntos
+		_, err := genetic.NewEvolution(testCfg(), train, val)
+		if err == nil {
+			t.Error("val vacío: se esperaba error, se obtuvo nil")
+		}
+	})
+}
+
 // ─── Population ───────────────────────────────────────────────────────────
 
 func TestInitPopulation_Size(t *testing.T) {
 	cfg := testCfg()
-	evol, _ := genetic.NewEvolution(cfg, testDS())
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
 	pop := evol.InitPopulation()
 	if len(pop) != cfg.PopulationSize {
 		t.Errorf("len(pop) = %d, want %d", len(pop), cfg.PopulationSize)
@@ -111,7 +142,7 @@ func TestInitPopulation_Size(t *testing.T) {
 }
 
 func TestInitPopulation_ValidExpr(t *testing.T) {
-	evol, _ := genetic.NewEvolution(testCfg(), testDS())
+	evol, _ := genetic.NewEvolution(testCfg(), testDS(), nil)
 	for i, ind := range evol.InitPopulation() {
 		if ind.Expr == nil {
 			t.Errorf("individuo %d: Expr es nil", i)
@@ -120,7 +151,7 @@ func TestInitPopulation_ValidExpr(t *testing.T) {
 }
 
 func TestInitPopulation_FitnessComputed(t *testing.T) {
-	evol, _ := genetic.NewEvolution(testCfg(), testDS())
+	evol, _ := genetic.NewEvolution(testCfg(), testDS(), nil)
 	for i, ind := range evol.InitPopulation() {
 		if math.IsNaN(ind.Result.Fitness) || math.IsInf(ind.Result.Fitness, 0) {
 			t.Errorf("individuo %d: Fitness no finito: %v", i, ind.Result.Fitness)
@@ -131,7 +162,7 @@ func TestInitPopulation_FitnessComputed(t *testing.T) {
 // ─── Tournament Selection ─────────────────────────────────────────────────
 
 func TestTournamentSelect_FromPop(t *testing.T) {
-	evol, _ := genetic.NewEvolution(testCfg(), testDS())
+	evol, _ := genetic.NewEvolution(testCfg(), testDS(), nil)
 	pop := evol.InitPopulation()
 
 	for i := 0; i < 30; i++ {
@@ -150,7 +181,7 @@ func TestTournamentSelect_FromPop(t *testing.T) {
 }
 
 func TestTournamentSelect_SelectsBest(t *testing.T) {
-	evol, _ := genetic.NewEvolution(testCfg(), testDS())
+	evol, _ := genetic.NewEvolution(testCfg(), testDS(), nil)
 
 	// Crear pop de 10 con un ganador claro (fitness = 0)
 	pop := make([]genetic.Individual, 10)
@@ -179,7 +210,7 @@ func TestTournamentSelect_SelectsBest(t *testing.T) {
 
 func TestElitism_BestSurvive(t *testing.T) {
 	cfg := testCfg()
-	evol, _ := genetic.NewEvolution(cfg, testDS())
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
 
 	pop := evol.InitPopulation()
 	sort.Slice(pop, func(i, j int) bool {
@@ -205,7 +236,7 @@ func TestElitism_BestSurvive(t *testing.T) {
 func TestElitism_Count(t *testing.T) {
 	cfg := testCfg()
 	cfg.ElitismRate = 0.1 // 10% de 20 = 2 élites
-	evol, _ := genetic.NewEvolution(cfg, testDS())
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
 
 	pop := evol.InitPopulation()
 	sort.Slice(pop, func(i, j int) bool {
@@ -244,7 +275,7 @@ func crossoverCfg() genetic.Config {
 }
 
 func TestCrossover_ReturnsValidTree(t *testing.T) {
-	evol, _ := genetic.NewEvolution(crossoverCfg(), testDS())
+	evol, _ := genetic.NewEvolution(crossoverCfg(), testDS(), nil)
 	a := expression.NewBinary(expression.NodeAdd, expression.NewVariable(), expression.NewConstant(1))
 	b := expression.NewBinary(expression.NodeMul, expression.NewVariable(), expression.NewConstant(2))
 
@@ -265,8 +296,8 @@ func TestCrossover_ReturnsValidTree(t *testing.T) {
 
 func TestCrossover_RespectsMaxDepth(t *testing.T) {
 	cfg := crossoverCfg()
-	evol, _ := genetic.NewEvolution(cfg, testDS())
-	evol2, _ := genetic.NewEvolution(crossoverCfg(), testDS())
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
+	evol2, _ := genetic.NewEvolution(crossoverCfg(), testDS(), nil)
 
 	pop1 := evol.InitPopulation()
 	pop2 := evol2.InitPopulation()
@@ -288,8 +319,8 @@ func TestCrossover_RespectsMaxDepth(t *testing.T) {
 
 func TestCrossover_RespectsMaxNodes(t *testing.T) {
 	cfg := crossoverCfg()
-	evol, _ := genetic.NewEvolution(cfg, testDS())
-	evol2, _ := genetic.NewEvolution(crossoverCfg(), testDS())
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
+	evol2, _ := genetic.NewEvolution(crossoverCfg(), testDS(), nil)
 
 	pop1 := evol.InitPopulation()
 	pop2 := evol2.InitPopulation()
@@ -306,7 +337,7 @@ func TestCrossover_RespectsMaxNodes(t *testing.T) {
 }
 
 func TestCrossover_ParentsUnchanged(t *testing.T) {
-	evol, _ := genetic.NewEvolution(crossoverCfg(), testDS())
+	evol, _ := genetic.NewEvolution(crossoverCfg(), testDS(), nil)
 	a := expression.NewBinary(expression.NodeAdd, expression.NewVariable(), expression.NewConstant(3))
 	b := expression.NewBinary(expression.NodeMul, expression.NewVariable(), expression.NewConstant(2))
 
@@ -326,7 +357,7 @@ func TestCrossover_ParentsUnchanged(t *testing.T) {
 }
 
 func TestCrossover_NoAliasing(t *testing.T) {
-	evol, _ := genetic.NewEvolution(crossoverCfg(), testDS())
+	evol, _ := genetic.NewEvolution(crossoverCfg(), testDS(), nil)
 	a := expression.NewBinary(expression.NodeAdd, expression.NewVariable(), expression.NewConstant(3))
 	b := expression.NewBinary(expression.NodeMul, expression.NewVariable(), expression.NewConstant(2))
 
@@ -364,7 +395,7 @@ func TestCrossover_NoAliasing(t *testing.T) {
 // ─── Mutation ─────────────────────────────────────────────────────────────
 
 func TestMutate_ReturnsValidTree(t *testing.T) {
-	evol, _ := genetic.NewEvolution(testCfg(), testDS())
+	evol, _ := genetic.NewEvolution(testCfg(), testDS(), nil)
 	pop := evol.InitPopulation()
 	for i, ind := range pop {
 		m := evol.Mutate(ind.Expr)
@@ -376,7 +407,7 @@ func TestMutate_ReturnsValidTree(t *testing.T) {
 
 func TestMutate_RespectsMaxDepth(t *testing.T) {
 	cfg := testCfg()
-	evol, _ := genetic.NewEvolution(cfg, testDS())
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
 	pop := evol.InitPopulation()
 	for i := 0; i < 100; i++ {
 		src := pop[i%len(pop)].Expr
@@ -389,7 +420,7 @@ func TestMutate_RespectsMaxDepth(t *testing.T) {
 
 func TestMutate_RespectsMaxNodes(t *testing.T) {
 	cfg := testCfg()
-	evol, _ := genetic.NewEvolution(cfg, testDS())
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
 	pop := evol.InitPopulation()
 	for i := 0; i < 100; i++ {
 		src := pop[i%len(pop)].Expr
@@ -401,7 +432,7 @@ func TestMutate_RespectsMaxNodes(t *testing.T) {
 }
 
 func TestMutate_OriginalUnchanged(t *testing.T) {
-	evol, _ := genetic.NewEvolution(testCfg(), testDS())
+	evol, _ := genetic.NewEvolution(testCfg(), testDS(), nil)
 	original := expression.NewBinary(expression.NodeAdd,
 		expression.NewVariable(), expression.NewConstant(7))
 	fmtBefore := expression.Format(original)
@@ -419,7 +450,7 @@ func TestMutate_OriginalUnchanged(t *testing.T) {
 
 func TestEvolution_PopulationSize(t *testing.T) {
 	cfg := testCfg()
-	evol, _ := genetic.NewEvolution(cfg, testDS())
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
 	pop := evol.InitPopulation()
 
 	for gen := 0; gen < 5; gen++ {
@@ -439,7 +470,7 @@ func TestEvolution_GlobalBestNeverWorsens(t *testing.T) {
 		history = append(history, best.Result.Fitness)
 	}
 
-	evol, _ := genetic.NewEvolution(cfg, testDS())
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
 	_, err := evol.Run()
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -459,7 +490,7 @@ func TestEvolution_NoPanic(t *testing.T) {
 		}
 	}()
 	cfg := testCfg()
-	evol, _ := genetic.NewEvolution(cfg, testDS())
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
 	_, err := evol.Run()
 	if err != nil {
 		t.Fatalf("Run devolvió error: %v", err)
@@ -470,10 +501,10 @@ func TestEvolution_Reproducible(t *testing.T) {
 	cfg := testCfg()
 	cfg.Generations = 10
 
-	evol1, _ := genetic.NewEvolution(cfg, testDS())
+	evol1, _ := genetic.NewEvolution(cfg, testDS(), nil)
 	best1, _ := evol1.Run()
 
-	evol2, _ := genetic.NewEvolution(cfg, testDS())
+	evol2, _ := genetic.NewEvolution(cfg, testDS(), nil)
 	best2, _ := evol2.Run()
 
 	if expression.Format(best1.Expr) != expression.Format(best2.Expr) {
@@ -521,7 +552,7 @@ func TestEvolution_LinearDataset(t *testing.T) {
 		finalMSE = best.Result.MSE
 	}
 
-	evol, err := genetic.NewEvolution(cfg, testDS())
+	evol, err := genetic.NewEvolution(cfg, testDS(), nil)
 	if err != nil {
 		t.Fatalf("NewEvolution: %v", err)
 	}
@@ -537,5 +568,180 @@ func TestEvolution_LinearDataset(t *testing.T) {
 	// El MSE final no puede ser peor que el inicial (monotonía del global best)
 	if finalMSE > initialMSE+1e-9 {
 		t.Errorf("MSE empeoró: inicial=%v final=%v", initialMSE, finalMSE)
+	}
+}
+
+// ─── ValidationResult en Run() ────────────────────────────────────────────
+
+func TestRun_ValidationResultNilWhenNoVal(t *testing.T) {
+	evol, _ := genetic.NewEvolution(testCfg(), testDS(), nil)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.ValidationResult != nil {
+		t.Error("ValidationResult debe ser nil cuando val es nil")
+	}
+}
+
+func TestRun_ValidationResultSetWhenVal(t *testing.T) {
+	val := dataset.New([]dataset.Point{{X: 6, Y: 13}, {X: 7, Y: 15}})
+	evol, _ := genetic.NewEvolution(testCfg(), testDS(), val)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.ValidationResult == nil {
+		t.Error("ValidationResult debe ser no-nil cuando val es no-nil")
+	}
+}
+
+func TestRun_ValidationResultFinite(t *testing.T) {
+	val := dataset.New([]dataset.Point{{X: 6, Y: 13}, {X: 7, Y: 15}})
+	evol, _ := genetic.NewEvolution(testCfg(), testDS(), val)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.ValidationResult == nil {
+		t.Fatal("ValidationResult es nil")
+	}
+	if math.IsNaN(best.ValidationResult.MSE) || math.IsInf(best.ValidationResult.MSE, 0) {
+		t.Errorf("ValidationResult.MSE no finito: %v", best.ValidationResult.MSE)
+	}
+}
+
+func TestRun_ValidationLambdaZero(t *testing.T) {
+	// Con lambda=0: Fitness = MSE + 0*Complexity = MSE (sin penalización).
+	// Esto verifica que Run() evalúa la validación con lambda=0.
+	val := dataset.New([]dataset.Point{{X: 6, Y: 13}, {X: 7, Y: 15}})
+	evol, _ := genetic.NewEvolution(testCfg(), testDS(), val)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.ValidationResult == nil {
+		t.Fatal("ValidationResult es nil")
+	}
+	if best.ValidationResult.Fitness != best.ValidationResult.MSE {
+		t.Errorf("con lambda=0: Fitness(%v) debe ser igual a MSE(%v)",
+			best.ValidationResult.Fitness, best.ValidationResult.MSE)
+	}
+}
+
+func TestRun_ValidationDoesNotAffectTraining(t *testing.T) {
+	// Test crítico: misma configuración, semilla y training deben producir
+	// el mismo resultado con y sin validación.
+	// La validación no debe alterar el RNG, la selección ni el fitness evolutivo.
+	cfg := testCfg()
+	train := testDS()
+	val := dataset.New([]dataset.Point{{X: 6, Y: 13}, {X: 7, Y: 15}})
+
+	// Con validación
+	evol1, err := genetic.NewEvolution(cfg, train, val)
+	if err != nil {
+		t.Fatalf("NewEvolution con val: %v", err)
+	}
+	best1, err := evol1.Run()
+	if err != nil {
+		t.Fatalf("Run con val: %v", err)
+	}
+
+	// Sin validación (misma seed)
+	evol2, err := genetic.NewEvolution(cfg, train, nil)
+	if err != nil {
+		t.Fatalf("NewEvolution sin val: %v", err)
+	}
+	best2, err := evol2.Run()
+	if err != nil {
+		t.Fatalf("Run sin val: %v", err)
+	}
+
+	// Los resultados de entrenamiento deben ser idénticos
+	if expression.Format(best1.Expr) != expression.Format(best2.Expr) {
+		t.Errorf("el validation cambió el resultado de training:\n  con val: %s\n  sin val: %s",
+			expression.Format(best1.Expr), expression.Format(best2.Expr))
+	}
+	if best1.Result.Fitness != best2.Result.Fitness {
+		t.Errorf("el validation cambió el fitness de training: %v vs %v",
+			best1.Result.Fitness, best2.Result.Fitness)
+	}
+	if best1.Result.MSE != best2.Result.MSE {
+		t.Errorf("el validation cambió el MSE de training: %v vs %v",
+			best1.Result.MSE, best2.Result.MSE)
+	}
+
+	// Solo el que tiene val debe tener ValidationResult no-nil
+	if best1.ValidationResult == nil {
+		t.Error("con val: ValidationResult debe ser no-nil")
+	}
+	if best2.ValidationResult != nil {
+		t.Error("sin val: ValidationResult debe ser nil")
+	}
+}
+
+func TestRun_ValidationReproducible(t *testing.T) {
+	// Misma seed → mismo ValidationResult.MSE en dos ejecuciones.
+	cfg := testCfg()
+	train := testDS()
+	val := dataset.New([]dataset.Point{{X: 6, Y: 13}, {X: 7, Y: 15}})
+
+	run := func() float64 {
+		evol, err := genetic.NewEvolution(cfg, train, val)
+		if err != nil {
+			t.Fatalf("NewEvolution: %v", err)
+		}
+		best, err := evol.Run()
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if best.ValidationResult == nil {
+			t.Fatal("ValidationResult nil")
+		}
+		return best.ValidationResult.MSE
+	}
+
+	mse1 := run()
+	mse2 := run()
+
+	if mse1 != mse2 {
+		t.Errorf("validation MSE no reproducible: %v vs %v", mse1, mse2)
+	}
+}
+
+func TestValidationEvaluate_PartialInvalid(t *testing.T) {
+	// Verifica que el mecanismo de evaluación de validación (fitness.Evaluate
+	// con lambda=0) maneja correctamente expresiones que fallan en algunos puntos.
+	//
+	// Usa ln(x) como expresión controlada: falla determinísticamente para x ≤ 0.
+	// No depende del algoritmo genético para generar la expresión.
+	lnX := expression.NewUnary(expression.NodeLn, expression.NewVariable())
+
+	// 2 puntos inválidos (x ≤ 0) y 2 válidos (x > 0)
+	val := dataset.New([]dataset.Point{
+		{X: -1, Y: 0}, // inválido: ln(-1)
+		{X: 0, Y: 0},  // inválido: ln(0)
+		{X: 1, Y: 0},  // válido: ln(1) = 0
+		{X: 2, Y: 0},  // válido: ln(2) ≈ 0.693
+	})
+
+	// fitness.Evaluate con lambda=0 es exactamente lo que Run() usa para validación
+	result, err := fitness.Evaluate(lnX, val, 0)
+	if err != nil {
+		t.Fatalf("Evaluate inesperado: %v", err)
+	}
+	if result.InvalidCount != 2 {
+		t.Errorf("InvalidCount = %d, want 2", result.InvalidCount)
+	}
+	if math.IsNaN(result.MSE) || math.IsInf(result.MSE, 0) {
+		t.Errorf("MSE debe ser finito con puntos inválidos: %v", result.MSE)
+	}
+	if result.MSE <= 0 {
+		t.Errorf("MSE debe ser > 0 por la penalización: %v", result.MSE)
+	}
+	// Con lambda=0: Fitness == MSE exacto (sin penalización de complejidad)
+	if result.Fitness != result.MSE {
+		t.Errorf("con lambda=0: Fitness(%v) debe ser igual a MSE(%v)",
+			result.Fitness, result.MSE)
 	}
 }

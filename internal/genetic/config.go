@@ -9,19 +9,26 @@ import (
 )
 
 // Individual es un individuo de la población del algoritmo genético.
-// Almacena la expresión candidata y el resultado completo del fitness.
+// ValidationResult es nil durante la evolución; solo Run() lo asigna
+// cuando se proporciona un dataset de validación.
 type Individual struct {
-	Expr   *expression.Node
-	Result fitness.FitnessResult // contiene MSE, Complexity, Fitness, InvalidCount
+	Expr             *expression.Node
+	Result           fitness.FitnessResult  // métricas de entrenamiento
+	ValidationResult *fitness.FitnessResult // nil si no hay val dataset; evaluado con lambda=0
 }
 
 // cloneIndividual devuelve una copia independiente del individuo.
-// La expresión queda clonada para evitar aliasing con la población.
+// Si ValidationResult no es nil, se copia su valor (copia defensiva del struct).
 func cloneIndividual(ind Individual) Individual {
-	return Individual{
+	clone := Individual{
 		Expr:   expression.Clone(ind.Expr),
 		Result: ind.Result,
 	}
+	if ind.ValidationResult != nil {
+		vr := *ind.ValidationResult // copia del valor, no del puntero
+		clone.ValidationResult = &vr
+	}
+	return clone
 }
 
 // Config contiene todos los parámetros del algoritmo genético.

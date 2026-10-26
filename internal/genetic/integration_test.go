@@ -1,14 +1,11 @@
 package genetic_test
 
-// integration_test.go — Fase 7: tests de integración del pipeline completo.
+// integration_test.go — Fase 12: pipeline completo con validación integrada.
 //
-// Diferencias con genetic_test.go (unit tests):
-//   - Usan dataset.Generate + dataset.Split (pipeline completo, no solo NewEvolution)
-//   - Evalúan validación por separado (fitness.Evaluate sobre val set)
-//   - Comprueban MSE real, no solo que "mejore" o "no panic"
-//
-// No usan LoadCSV para evitar dependencia de rutas relativas de disco en CI.
-// El CSV se testea independientemente en internal/dataset/dataset_test.go.
+// Diferencias respecto a Fase 11:
+//   - NewEvolution recibe train y val; Run() asigna best.ValidationResult.
+//   - Se elimina la llamada manual a fitness.Evaluate para validación.
+//   - Se elimina el import de fitness (ya no es necesario aquí).
 
 import (
 	"math"
@@ -16,9 +13,8 @@ import (
 
 	"github.com/LautiSeverino/symbolic-regression/internal/dataset"
 	"github.com/LautiSeverino/symbolic-regression/internal/expression"
-	"github.com/LautiSeverino/symbolic-regression/internal/fitness"
-	"github.com/LautiSeverino/symbolic-regression/internal/genetic"
 	"github.com/LautiSeverino/symbolic-regression/internal/generator"
+	"github.com/LautiSeverino/symbolic-regression/internal/genetic"
 )
 
 // integrationCfg devuelve una configuración equilibrada para tests de integración.
@@ -57,13 +53,9 @@ func integrationCfg(seed int64) genetic.Config {
 // Pasos cubiertos:
 //  1. dataset.Generate crea el dataset sintético
 //  2. dataset.Split divide en train / validation
-//  3. genetic.NewEvolution + Run ejecuta la evolución sobre train
-//  4. fitness.Evaluate mide el error final sobre val
-//
-// Criterio de éxito: el GA debe encontrar una expresión con MSE
-// razonablemente bajo tanto en training como en validation.
-// No se exige MSE=0 porque la penalización de complejidad puede preferir
-// una expresión ligeramente imprecisa pero más simple (comportamiento correcto).
+//  3. genetic.NewEvolution + Run ejecuta la evolución sobre train y asigna
+//     best.ValidationResult (lambda=0) sobre val al finalizar
+//  4. Se comprueban training MSE y validation MSE directamente en best
 func TestIntegration_LinearPipeline(t *testing.T) {
 	// 1. Generar dataset: f(x) = 2*x + 1, x ∈ [1, 20], 20 puntos
 	ds := dataset.Generate(func(x float64) float64 { return 2*x + 1 }, 1, 20, 20)
@@ -82,7 +74,7 @@ func TestIntegration_LinearPipeline(t *testing.T) {
 
 	// 3. Ejecutar evolución
 	cfg := integrationCfg(42)
-	evol, err := genetic.NewEvolution(cfg, train)
+	evol, err := genetic.NewEvolution(cfg, train, val)
 	if err != nil {
 		t.Fatalf("NewEvolution: %v", err)
 	}
@@ -91,15 +83,14 @@ func TestIntegration_LinearPipeline(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	// 4. Evaluar en validation (lambda=0: MSE puro, sin penalización de complejidad)
-	valResult, err := fitness.Evaluate(best.Expr, val, 0)
-	if err != nil {
-		t.Fatalf("Evaluate validation: %v", err)
+	// ValidationResult debe estar presente cuando se proporciona val
+	if best.ValidationResult == nil {
+		t.Fatal("ValidationResult es nil: Run() debe evaluar sobre val cuando se proporciona")
 	}
 
 	t.Logf("Expression     : %s", expression.Format(best.Expr))
 	t.Logf("Training MSE   : %f", best.Result.MSE)
-	t.Logf("Validation MSE : %f", valResult.MSE)
+	t.Logf("Validation MSE : %f", best.ValidationResult.MSE)
 	t.Logf("Complexity     : %d nodes", best.Result.Complexity)
 
 	// Criterios de aceptación:
@@ -111,9 +102,9 @@ func TestIntegration_LinearPipeline(t *testing.T) {
 		t.Errorf("Training MSE = %f, quería ≤ %f para f(x) = 2*x + 1",
 			best.Result.MSE, mseThreshold)
 	}
-	if valResult.MSE > mseThreshold {
+	if best.ValidationResult.MSE > mseThreshold {
 		t.Errorf("Validation MSE = %f, quería ≤ %f (posible overfitting al training set)",
-			valResult.MSE, mseThreshold)
+			best.ValidationResult.MSE, mseThreshold)
 	}
 
 	// La expresión no debe producir resultados inválidos en ningún punto del dataset completo.
@@ -121,8 +112,8 @@ func TestIntegration_LinearPipeline(t *testing.T) {
 		t.Errorf("Training: %d puntos inválidos (división por cero / dominio inválido)",
 			best.Result.InvalidCount)
 	}
-	if valResult.InvalidCount != 0 {
-		t.Errorf("Validation: %d puntos inválidos", valResult.InvalidCount)
+	if best.ValidationResult.InvalidCount != 0 {
+		t.Errorf("Validation: %d puntos inválidos", best.ValidationResult.InvalidCount)
 	}
 }
 
@@ -131,12 +122,12 @@ func TestIntegration_LinearPipeline(t *testing.T) {
 func TestIntegration_LinearReproducible(t *testing.T) {
 	run := func() (string, float64) {
 		ds := dataset.Generate(func(x float64) float64 { return 2*x + 1 }, 1, 20, 20)
-		train, _, err := dataset.Split(ds, 0.80, 42)
+		train, val, err := dataset.Split(ds, 0.80, 42)
 		if err != nil {
 			t.Fatalf("Split: %v", err)
 		}
 		cfg := integrationCfg(42)
-		evol, err := genetic.NewEvolution(cfg, train)
+		evol, err := genetic.NewEvolution(cfg, train, val)
 		if err != nil {
 			t.Fatalf("NewEvolution: %v", err)
 		}
@@ -158,8 +149,8 @@ func TestIntegration_LinearReproducible(t *testing.T) {
 	}
 }
 
-// TestIntegration_LinearValidationFinite asegura que los resultados de validation
-// son siempre valores finitos, nunca NaN ni ±Inf.
+// TestIntegration_LinearValidationFinite asegura que ValidationResult.MSE
+// es siempre un valor finito, nunca NaN ni ±Inf.
 func TestIntegration_LinearValidationFinite(t *testing.T) {
 	ds := dataset.Generate(func(x float64) float64 { return 2*x + 1 }, 1, 20, 20)
 	train, val, err := dataset.Split(ds, 0.80, 42)
@@ -168,7 +159,7 @@ func TestIntegration_LinearValidationFinite(t *testing.T) {
 	}
 
 	cfg := integrationCfg(42)
-	evol, err := genetic.NewEvolution(cfg, train)
+	evol, err := genetic.NewEvolution(cfg, train, val)
 	if err != nil {
 		t.Fatalf("NewEvolution: %v", err)
 	}
@@ -177,12 +168,10 @@ func TestIntegration_LinearValidationFinite(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	valResult, err := fitness.Evaluate(best.Expr, val, 0)
-	if err != nil {
-		t.Fatalf("Evaluate: %v", err)
+	if best.ValidationResult == nil {
+		t.Fatal("ValidationResult es nil")
 	}
-
-	if math.IsNaN(valResult.MSE) || math.IsInf(valResult.MSE, 0) {
-		t.Errorf("Validation MSE no es finito: %v", valResult.MSE)
+	if math.IsNaN(best.ValidationResult.MSE) || math.IsInf(best.ValidationResult.MSE, 0) {
+		t.Errorf("Validation MSE no es finito: %v", best.ValidationResult.MSE)
 	}
 }

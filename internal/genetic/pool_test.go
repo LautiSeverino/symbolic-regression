@@ -21,8 +21,8 @@ import (
 
 	"github.com/LautiSeverino/symbolic-regression/internal/dataset"
 	"github.com/LautiSeverino/symbolic-regression/internal/expression"
-	"github.com/LautiSeverino/symbolic-regression/internal/genetic"
 	"github.com/LautiSeverino/symbolic-regression/internal/generator"
+	"github.com/LautiSeverino/symbolic-regression/internal/genetic"
 )
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ func poolDS() *dataset.Dataset {
 // runEvolution ejecuta la evolución completa con la configuración dada.
 func runEvolution(t *testing.T, cfg genetic.Config) *genetic.Individual {
 	t.Helper()
-	evol, err := genetic.NewEvolution(cfg, poolDS())
+	evol, err := genetic.NewEvolution(cfg, poolDS(), nil)
 	if err != nil {
 		t.Fatalf("NewEvolution(workers=%d): %v", cfg.Workers, err)
 	}
@@ -80,7 +80,7 @@ func runEvolution(t *testing.T, cfg genetic.Config) *genetic.Individual {
 func TestWorkers_Zero_NormalizedToOne(t *testing.T) {
 	// Workers=0 debe ser normalizado a 1 sin error.
 	cfg := poolCfg(0)
-	_, err := genetic.NewEvolution(cfg, poolDS())
+	_, err := genetic.NewEvolution(cfg, poolDS(), nil)
 	if err != nil {
 		t.Errorf("Workers=0: error inesperado (debe normalizarse a 1): %v", err)
 	}
@@ -90,7 +90,7 @@ func TestWorkers_Negative_NormalizedToOne(t *testing.T) {
 	// Workers negativos deben normalizarse a 1 sin error.
 	for _, w := range []int{-1, -10, -100} {
 		cfg := poolCfg(w)
-		_, err := genetic.NewEvolution(cfg, poolDS())
+		_, err := genetic.NewEvolution(cfg, poolDS(), nil)
 		if err != nil {
 			t.Errorf("Workers=%d: error inesperado (debe normalizarse a 1): %v", w, err)
 		}
@@ -101,7 +101,7 @@ func TestWorkers_ValidValues(t *testing.T) {
 	// Workers >= 1 deben ser aceptados.
 	for _, w := range []int{1, 2, 4, 8, 16} {
 		cfg := poolCfg(w)
-		evol, err := genetic.NewEvolution(cfg, poolDS())
+		evol, err := genetic.NewEvolution(cfg, poolDS(), nil)
 		if err != nil {
 			t.Errorf("Workers=%d: error inesperado: %v", w, err)
 		}
@@ -228,7 +228,7 @@ func TestWorkers_InvalidExpressions_NoPanic(t *testing.T) {
 		}
 	}()
 
-	evol, err := genetic.NewEvolution(cfg, ds)
+	evol, err := genetic.NewEvolution(cfg, ds, nil)
 	if err != nil {
 		t.Fatalf("NewEvolution: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestWorkers_InitPopulation_MultipleWorkers(t *testing.T) {
 		w := w
 		t.Run(fmt.Sprintf("workers=%d", w), func(t *testing.T) {
 			cfg := poolCfg(w)
-			evol, _ := genetic.NewEvolution(cfg, poolDS())
+			evol, _ := genetic.NewEvolution(cfg, poolDS(), nil)
 			pop := evol.InitPopulation()
 
 			if len(pop) != cfg.PopulationSize {
@@ -275,7 +275,7 @@ func TestWorkers_NextGeneration_PreservesSize(t *testing.T) {
 		t.Run(fmt.Sprintf("workers=%d", w), func(t *testing.T) {
 			cfg := poolCfg(w)
 			cfg.Generations = 5
-			evol, _ := genetic.NewEvolution(cfg, poolDS())
+			evol, _ := genetic.NewEvolution(cfg, poolDS(), nil)
 			pop := evol.InitPopulation()
 			for range 5 {
 				pop = evol.NextGeneration(pop)
@@ -293,7 +293,7 @@ func TestWorkers_InitPopulation_Deterministic(t *testing.T) {
 	// Misma seed con Workers=1 y Workers=4 debe producir la misma población inicial.
 	makeInitPop := func(workers int) []string {
 		cfg := poolCfg(workers)
-		evol, _ := genetic.NewEvolution(cfg, poolDS())
+		evol, _ := genetic.NewEvolution(cfg, poolDS(), nil)
 		pop := evol.InitPopulation()
 		formats := make([]string, len(pop))
 		for i, ind := range pop {
@@ -327,7 +327,7 @@ func TestWorkers_GlobalBestNeverWorsens_Parallel(t *testing.T) {
 		history = append(history, best.Result.Fitness)
 	}
 
-	evol, _ := genetic.NewEvolution(cfg, poolDS())
+	evol, _ := genetic.NewEvolution(cfg, poolDS(), nil)
 	_, err := evol.Run()
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -349,7 +349,7 @@ func TestWorkers_NoPanic_Parallel(t *testing.T) {
 		}
 	}()
 	cfg := poolCfg(4)
-	evol, _ := genetic.NewEvolution(cfg, poolDS())
+	evol, _ := genetic.NewEvolution(cfg, poolDS(), nil)
 	_, err := evol.Run()
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -384,21 +384,21 @@ func benchmarkWorkers(b *testing.B, workers int) {
 		Seed:           42,
 		Workers:        workers,
 		GenConfig: generator.Config{
-			MaxDepth:         5,
-			MaxNodes:         30,
-			AllowedBinaryOps: []expression.NodeType{expression.NodeAdd, expression.NodeSub, expression.NodeMul, expression.NodeDiv},
-			AllowedUnaryOps:  nil,
-			ConstantMin:      -5,
-			ConstantMax:      5,
+			MaxDepth:            5,
+			MaxNodes:            30,
+			AllowedBinaryOps:    []expression.NodeType{expression.NodeAdd, expression.NodeSub, expression.NodeMul, expression.NodeDiv},
+			AllowedUnaryOps:     nil,
+			ConstantMin:         -5,
+			ConstantMax:         5,
 			VariableProbability: 0.5,
 			TerminalProbability: 0.3,
-			Seed:             42,
+			Seed:                42,
 		},
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		evol, err := genetic.NewEvolution(cfg, ds)
+		evol, err := genetic.NewEvolution(cfg, ds, nil)
 		if err != nil {
 			b.Fatalf("NewEvolution: %v", err)
 		}
@@ -408,10 +408,10 @@ func benchmarkWorkers(b *testing.B, workers int) {
 	}
 }
 
-func BenchmarkWorkers_1(b *testing.B)  { benchmarkWorkers(b, 1) }
-func BenchmarkWorkers_2(b *testing.B)  { benchmarkWorkers(b, 2) }
-func BenchmarkWorkers_4(b *testing.B)  { benchmarkWorkers(b, 4) }
-func BenchmarkWorkers_N(b *testing.B)  { benchmarkWorkers(b, runtime.NumCPU()) }
+func BenchmarkWorkers_1(b *testing.B) { benchmarkWorkers(b, 1) }
+func BenchmarkWorkers_2(b *testing.B) { benchmarkWorkers(b, 2) }
+func BenchmarkWorkers_4(b *testing.B) { benchmarkWorkers(b, 4) }
+func BenchmarkWorkers_N(b *testing.B) { benchmarkWorkers(b, runtime.NumCPU()) }
 
 // ─── 13. Medición simple inline (no un benchmark formal) ─────────────────
 
@@ -458,7 +458,7 @@ func TestWorkers_SimpleTiming(t *testing.T) {
 				Seed:                42,
 			},
 		}
-		evol, err := genetic.NewEvolution(cfg, ds)
+		evol, err := genetic.NewEvolution(cfg, ds, nil)
 		if err != nil {
 			t.Fatalf("workers=%d: %v", w, err)
 		}

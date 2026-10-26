@@ -331,7 +331,7 @@ func TestAllProfiles_ValidViaNewEvolution(t *testing.T) {
 			}
 			cfg.Seed = 42
 			cfg.GenConfig.Seed = 43
-			_, err = genetic.NewEvolution(cfg, ds)
+			_, err = genetic.NewEvolution(cfg, ds, nil)
 			if err != nil {
 				t.Errorf("NewEvolution rechazó la config del perfil %q: %v", name, err)
 			}
@@ -364,7 +364,7 @@ func TestAllProfiles_Determinism(t *testing.T) {
 				cfg.Seed = 42
 				cfg.GenConfig.Seed = 43
 
-				evol, err := genetic.NewEvolution(cfg, ds)
+				evol, err := genetic.NewEvolution(cfg, ds, nil)
 				if err != nil {
 					t.Fatalf("NewEvolution: %v", err)
 				}
@@ -415,7 +415,7 @@ func TestProfile_FAST_EndToEnd(t *testing.T) {
 	cfg.Seed = 42
 	cfg.GenConfig.Seed = 43
 
-	evol, err := genetic.NewEvolution(cfg, train)
+	evol, err := genetic.NewEvolution(cfg, train, nil)
 	if err != nil {
 		t.Fatalf("NewEvolution: %v", err)
 	}

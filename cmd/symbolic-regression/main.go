@@ -1,4 +1,4 @@
-// Regresión Simbólica Evolutiva — Fase 11: perfiles de ejecución.
+// Regresión Simbólica Evolutiva — Fase 12: validación integrada.
 //
 // El programa carga un dataset CSV, lo divide en training/validation,
 // ejecuta el algoritmo genético con el perfil elegido e imprime el resultado.
@@ -25,7 +25,6 @@ import (
 	"github.com/LautiSeverino/symbolic-regression/internal/config"
 	"github.com/LautiSeverino/symbolic-regression/internal/dataset"
 	"github.com/LautiSeverino/symbolic-regression/internal/expression"
-	"github.com/LautiSeverino/symbolic-regression/internal/fitness"
 	"github.com/LautiSeverino/symbolic-regression/internal/genetic"
 )
 
@@ -78,7 +77,7 @@ func main() {
 	cfg.GenConfig.Seed = *seedFlag + 1
 
 	fmt.Println("══════════════════════════════════════════")
-	fmt.Println("  Regresión Simbólica Evolutiva — Fase 11")
+	fmt.Println("  Regresión Simbólica Evolutiva — Fase 12")
 	fmt.Println("══════════════════════════════════════════")
 	fmt.Println()
 
@@ -127,7 +126,7 @@ func main() {
 	}
 
 	// ── 5. Crear y ejecutar la evolución ──────────────────────────────────
-	evol, err := genetic.NewEvolution(cfg, train)
+	evol, err := genetic.NewEvolution(cfg, train, val)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error al inicializar evolución: %v\n", err)
 		os.Exit(1)
@@ -140,14 +139,9 @@ func main() {
 	}
 	elapsed := time.Since(start)
 
-	// ── 6. Evaluar en validation ──────────────────────────────────────────
-	valResult, err := fitness.Evaluate(best.Expr, val, 0)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error al evaluar en validation: %v\n", err)
-		os.Exit(1)
-	}
-
-	// ── 7. Resultado final ────────────────────────────────────────────────
+	// ── 6. Resultado final ────────────────────────────────────────────────
+	// La evaluación sobre val ya fue realizada por Run() internamente.
+	// best.ValidationResult es nil solo si val fue nil (no ocurre en el flujo normal).
 	totalEvals := cfg.PopulationSize * cfg.Generations * train.Len()
 	fmt.Println()
 	fmt.Println("══════════════════════════════════════════")
@@ -157,7 +151,9 @@ func main() {
 	fmt.Printf("Expression     : %s\n", expression.Format(best.Expr))
 	fmt.Println()
 	fmt.Printf("Training MSE   : %.10f\n", best.Result.MSE)
-	fmt.Printf("Validation MSE : %.10f\n", valResult.MSE)
+	if best.ValidationResult != nil {
+		fmt.Printf("Validation MSE : %.10f\n", best.ValidationResult.MSE)
+	}
 	fmt.Println()
 	fmt.Printf("Complexity     : %d nodes\n", best.Result.Complexity)
 	fmt.Println()
