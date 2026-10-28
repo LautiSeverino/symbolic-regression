@@ -327,13 +327,13 @@ func TestFormat(t *testing.T) {
 			"x + 2",
 			expression.NewBinary(expression.NodeAdd,
 				expression.NewVariable(), expression.NewConstant(2)),
-			"(x + 2)",
+			"x + 2",
 		},
 		{
 			"x * 3",
 			expression.NewBinary(expression.NodeMul,
 				expression.NewVariable(), expression.NewConstant(3)),
-			"(x * 3)",
+			"x * 3",
 		},
 		{
 			"(x + 1) * 2",
@@ -341,12 +341,12 @@ func TestFormat(t *testing.T) {
 				expression.NewBinary(expression.NodeAdd,
 					expression.NewVariable(), expression.NewConstant(1)),
 				expression.NewConstant(2)),
-			"((x + 1) * 2)",
+			"(x + 1) * 2",
 		},
 		{
 			"linear 2*x+1",
 			linear(),
-			"((2 * x) + 1)",
+			"2 * x + 1",
 		},
 	}
 	for _, tt := range tests {
@@ -605,19 +605,19 @@ func TestFormat_Unary(t *testing.T) {
 			"ln(x)",
 		},
 		{
-			// El argumento binario se parentesiza por la regla de Format
+			// El argumento de la función no necesita paréntesis adicionales
 			"sqrt(x + 2)",
 			expression.NewUnary(expression.NodeSqrt,
 				expression.NewBinary(expression.NodeAdd,
 					expression.NewVariable(), expression.NewConstant(2))),
-			"sqrt((x + 2))",
+			"sqrt(x + 2)",
 		},
 		{
 			"ln(x - 1)",
 			expression.NewUnary(expression.NodeLn,
 				expression.NewBinary(expression.NodeSub,
 					expression.NewVariable(), expression.NewConstant(1))),
-			"ln((x - 1))",
+			"ln(x - 1)",
 		},
 		{
 			// Composición: sqrt dentro de ln está fuera del scope actual,

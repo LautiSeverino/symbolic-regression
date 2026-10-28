@@ -565,15 +565,15 @@ func TestFormat_Phase8(t *testing.T) {
 		// NodePow — binario parentesizado
 		{"x^2", expression.NewBinary(expression.NodePow,
 			expression.NewVariable(), expression.NewConstant(2)),
-			"(x ^ 2)"},
+			"x ^ 2"},
 		{"x^-1", expression.NewBinary(expression.NodePow,
 			expression.NewVariable(), expression.NewConstant(-1)),
-			"(x ^ -1)"},
+			"x ^ -1"},
 		{"(x+1)^3", expression.NewBinary(expression.NodePow,
 			expression.NewBinary(expression.NodeAdd,
 				expression.NewVariable(), expression.NewConstant(1)),
 			expression.NewConstant(3)),
-			"((x + 1) ^ 3)"},
+			"(x + 1) ^ 3"},
 
 		// NodeAbs — unario
 		{"abs(x)", expression.NewUnary(expression.NodeAbs, expression.NewVariable()),
@@ -581,7 +581,7 @@ func TestFormat_Phase8(t *testing.T) {
 		{"abs(x-3)", expression.NewUnary(expression.NodeAbs,
 			expression.NewBinary(expression.NodeSub,
 				expression.NewVariable(), expression.NewConstant(3))),
-			"abs((x - 3))"},
+			"abs(x - 3)"},
 
 		// NodeExp — unario
 		{"exp(x)", expression.NewUnary(expression.NodeExp, expression.NewVariable()),
@@ -589,7 +589,7 @@ func TestFormat_Phase8(t *testing.T) {
 		{"exp(x+1)", expression.NewUnary(expression.NodeExp,
 			expression.NewBinary(expression.NodeAdd,
 				expression.NewVariable(), expression.NewConstant(1))),
-			"exp((x + 1))"},
+			"exp(x + 1)"},
 
 		// NodeSin — unario
 		{"sin(x)", expression.NewUnary(expression.NodeSin, expression.NewVariable()),
@@ -597,7 +597,7 @@ func TestFormat_Phase8(t *testing.T) {
 		{"sin(x*2)", expression.NewUnary(expression.NodeSin,
 			expression.NewBinary(expression.NodeMul,
 				expression.NewVariable(), expression.NewConstant(2))),
-			"sin((x * 2))"},
+			"sin(x * 2)"},
 
 		// NodeCos — unario
 		{"cos(x)", expression.NewUnary(expression.NodeCos, expression.NewVariable()),
@@ -614,7 +614,7 @@ func TestFormat_Phase8(t *testing.T) {
 		{"abs(x^2)", expression.NewUnary(expression.NodeAbs,
 			expression.NewBinary(expression.NodePow,
 				expression.NewVariable(), expression.NewConstant(2))),
-			"abs((x ^ 2))"},
+			"abs(x ^ 2)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
