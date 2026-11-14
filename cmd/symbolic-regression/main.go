@@ -77,7 +77,7 @@ func main() {
 	cfg.GenConfig.Seed = *seedFlag + 1
 
 	fmt.Println("══════════════════════════════════════════")
-	fmt.Println("  Regresión Simbólica Evolutiva — Fase 12")
+	fmt.Println("  Regresión Simbólica Evolutiva — Fase 14")
 	fmt.Println("══════════════════════════════════════════")
 	fmt.Println()
 
@@ -142,7 +142,14 @@ func main() {
 	// ── 6. Resultado final ────────────────────────────────────────────────
 	// La evaluación sobre val ya fue realizada por Run() internamente.
 	// best.ValidationResult es nil solo si val fue nil (no ocurre en el flujo normal).
-	totalEvals := cfg.PopulationSize * cfg.Generations * train.Len()
+	// totalEvals refleja las evaluaciones reales de puntos de entrenamiento:
+	// - Población inicial: PopulationSize evaluaciones.
+	// - Por cada generación evolutiva: solo los individuos no-élite se re-evalúan
+	//   (los élites conservan sus resultados). Con GenerationsRun=0 solo se cuenta
+	//   la población inicial (parada en gen=0).
+	eliteCount := cfg.EliteCount()
+	evaluated := cfg.PopulationSize + best.GenerationsRun*(cfg.PopulationSize-eliteCount)
+	totalEvals := evaluated * train.Len()
 	fmt.Println()
 	fmt.Println("══════════════════════════════════════════")
 	fmt.Println("  RESULT")
@@ -157,7 +164,7 @@ func main() {
 	fmt.Println()
 	fmt.Printf("Complexity     : %d nodes\n", best.Result.Complexity)
 	fmt.Println()
-	fmt.Printf("Generations    : %d\n", cfg.Generations)
+	fmt.Printf("Generations    : %d\n", best.GenerationsRun)
 	fmt.Printf("Population     : %d\n", cfg.PopulationSize)
 	fmt.Printf("Total evals    : %d\n", totalEvals)
 	fmt.Printf("Workers        : %d\n", cfg.Workers)

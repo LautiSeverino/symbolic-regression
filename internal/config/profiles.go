@@ -73,17 +73,23 @@ func Parse(name string) (genetic.Config, error) {
 //
 //	Population:  250  |  Generations:   50
 //	Depth:         5  |  Max nodes:     40  |  Workers: 4
+//
+// Los criterios de parada anticipada (Fase 14) están deshabilitados por defecto.
 func FASTConfig() genetic.Config {
 	return genetic.Config{
-		PopulationSize: 250,
-		Generations:    50,
-		TournamentSize: 3,
-		ElitismRate:    0.05,
-		MutationRate:   0.10,
-		CrossoverRate:  0.80,
-		Lambda:         0.01,
-		Workers:        4,
-		GenConfig:      standardGenConfig(5, 40),
+		PopulationSize:   250,
+		Generations:      50,
+		TournamentSize:   3,
+		ElitismRate:      0.05,
+		MutationRate:     0.10,
+		CrossoverRate:    0.80,
+		Lambda:           0.01,
+		Workers:          4,
+		TargetMSEEnabled: false,
+		TargetMSE:        0,
+		StagnationLimit:  0,
+		StagnationDelta:  0,
+		GenConfig:        standardGenConfig(5, 40),
 	}
 }
 
@@ -91,17 +97,23 @@ func FASTConfig() genetic.Config {
 //
 //	Population: 1.000  |  Generations:  300
 //	Depth:          7  |  Max nodes:     75  |  Workers: 8
+//
+// Los criterios de parada anticipada (Fase 14) están deshabilitados por defecto.
 func BALANCEDConfig() genetic.Config {
 	return genetic.Config{
-		PopulationSize: 1_000,
-		Generations:    300,
-		TournamentSize: 3,
-		ElitismRate:    0.05,
-		MutationRate:   0.10,
-		CrossoverRate:  0.80,
-		Lambda:         0.01,
-		Workers:        8,
-		GenConfig:      standardGenConfig(7, 75),
+		PopulationSize:   1_000,
+		Generations:      300,
+		TournamentSize:   3,
+		ElitismRate:      0.05,
+		MutationRate:     0.10,
+		CrossoverRate:    0.80,
+		Lambda:           0.01,
+		Workers:          8,
+		TargetMSEEnabled: false,
+		TargetMSE:        0,
+		StagnationLimit:  0,
+		StagnationDelta:  0,
+		GenConfig:        standardGenConfig(7, 75),
 	}
 }
 
@@ -109,17 +121,23 @@ func BALANCEDConfig() genetic.Config {
 //
 //	Population: 5.000  |  Generations: 1.000
 //	Depth:         10  |  Max nodes:    100  |  Workers: 8
+//
+// Los criterios de parada anticipada (Fase 14) están deshabilitados por defecto.
 func INTENSIVEConfig() genetic.Config {
 	return genetic.Config{
-		PopulationSize: 5_000,
-		Generations:    1_000,
-		TournamentSize: 3,
-		ElitismRate:    0.05,
-		MutationRate:   0.10,
-		CrossoverRate:  0.80,
-		Lambda:         0.01,
-		Workers:        8,
-		GenConfig:      standardGenConfig(10, 100),
+		PopulationSize:   5_000,
+		Generations:      1_000,
+		TournamentSize:   3,
+		ElitismRate:      0.05,
+		MutationRate:     0.10,
+		CrossoverRate:    0.80,
+		Lambda:           0.01,
+		Workers:          8,
+		TargetMSEEnabled: false,
+		TargetMSE:        0,
+		StagnationLimit:  0,
+		StagnationDelta:  0,
+		GenConfig:        standardGenConfig(10, 100),
 	}
 }
 

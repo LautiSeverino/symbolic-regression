@@ -448,3 +448,27 @@ func TestProfile_FAST_EndToEnd(t *testing.T) {
 	t.Logf("Validation MSE : %v", valResult.MSE)
 	t.Logf("Complexity     : %d nodes", best.Result.Complexity)
 }
+
+// ─── Fase 14: criterios de parada anticipada deshabilitados por defecto ──
+
+func TestAllProfiles_EarlyStopFields_DisabledByDefault(t *testing.T) {
+	// Todos los perfiles deben tener los criterios de parada anticipada
+	// deshabilitados por defecto, para preservar el comportamiento anterior.
+	for _, name := range allProfileNames {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := config.Parse(name)
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", name, err)
+			}
+			if cfg.TargetMSEEnabled {
+				t.Errorf("%s: TargetMSEEnabled = true, want false", name)
+			}
+			if cfg.StagnationLimit != 0 {
+				t.Errorf("%s: StagnationLimit = %d, want 0", name, cfg.StagnationLimit)
+			}
+			if cfg.StagnationDelta != 0 {
+				t.Errorf("%s: StagnationDelta = %v, want 0", name, cfg.StagnationDelta)
+			}
+		})
+	}
+}

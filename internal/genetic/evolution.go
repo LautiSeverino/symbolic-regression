@@ -65,6 +65,22 @@ func NewEvolution(cfg Config, train, val *dataset.Dataset) (*Evolution, error) {
 	}, nil
 }
 
+// updateStagnationCount devuelve el nuevo valor del contador de estancamiento.
+//
+// La comparación es estrictamente generación a generación: se evalúa si
+// (prevFitness - newFitness) > delta para la generación actual.
+// Varias mejoras consecutivas, cada una inferior a delta, incrementan el
+// contador aunque su suma supere delta.
+//
+// Devuelve 0 si hubo mejora significativa; count+1 en caso contrario.
+// Es una función pura sin efectos secundarios.
+func updateStagnationCount(prevFitness, newFitness, delta float64, count int) int {
+	if prevFitness-newFitness > delta {
+		return 0
+	}
+	return count + 1
+}
+
 // InitPopulation genera la población inicial y evalúa el fitness de cada individuo.
 //
 // Separación generación / evaluación:
@@ -94,12 +110,31 @@ func (e *Evolution) InitPopulation() []Individual {
 
 // Run ejecuta el loop evolutivo y retorna el mejor individuo global.
 //
+// Criterios de parada (Fase 14) — semántica OR, el primero en cumplirse termina:
+//   - Generations: límite hard superior; siempre activo.
+//   - TargetMSE: si TargetMSEEnabled=true, se evalúa en gen=0 (población inicial)
+//     y en cada generación evolutiva. La evaluación en gen=0 permite terminar
+//     sin ejecutar ninguna generación cuando la población inicial ya satisface
+//     el objetivo; en ese caso GenerationsRun vale 0.
+//   - Estancamiento: si StagnationLimit>0, el loop termina tras StagnationLimit
+//     generaciones consecutivas sin mejora significativa en Fitness (medida por
+//     StagnationDelta). El estancamiento no se evalúa en gen=0 porque no existe
+//     baseline previo contra el cual comparar.
+//
+// Cuando TargetMSE y estancamiento se cumplen en la misma generación,
+// TargetMSE tiene prioridad (se comprueba primero en el código).
+//
 // El globalBest nunca empeora: si gen N no produce nada mejor, se conserva
 // el mejor encontrado hasta ese momento (garantizado por elitismo + tracking).
 //
-// OnGeneration (si no es nil) se invoca:
-//   - gen=0: con la población inicial
-//   - gen=1..Generations: con la generación evolucionada
+// OnGeneration se invoca:
+//   - gen=0: con la población inicial, siempre antes de cualquier check de parada.
+//   - gen=1..N: al finalizar cada generación procesada, incluida la que provoca
+//     la parada, siempre antes de los checks de parada anticipada.
+//
+// Validation se evalúa exactamente una vez al finalizar Run(),
+// independientemente del motivo de terminación.
+// Nunca interviene en los criterios de parada.
 func (e *Evolution) Run() (*Individual, error) {
 	pop := e.InitPopulation()
 	sortByFitness(pop)
@@ -109,22 +144,60 @@ func (e *Evolution) Run() (*Individual, error) {
 		e.cfg.OnGeneration(0, globalBest)
 	}
 
+	// Check de TargetMSE en gen=0: la población inicial ya está evaluada.
+	// El estancamiento no aplica aquí porque no hay baseline previo.
+	if e.cfg.TargetMSEEnabled && globalBest.Result.MSE <= e.cfg.TargetMSE {
+		// GenerationsRun=0: ninguna generación evolutiva fue ejecutada.
+		globalBest.GenerationsRun = 0
+		return e.finalize(&globalBest)
+	}
+
+	stagnationCount := 0
+	generationsRun := 0
+
 	for gen := 1; gen <= e.cfg.Generations; gen++ {
 		pop = e.NextGeneration(pop)
 		sortByFitness(pop)
 
+		prevFitness := globalBest.Result.Fitness
 		if pop[0].Result.Fitness < globalBest.Result.Fitness {
 			globalBest = cloneIndividual(pop[0])
 		}
+
+		// Actualizar contador de estancamiento (solo si el criterio está activo).
+		if e.cfg.StagnationLimit > 0 {
+			stagnationCount = updateStagnationCount(
+				prevFitness, globalBest.Result.Fitness,
+				e.cfg.StagnationDelta, stagnationCount,
+			)
+		}
+
+		// Informar generación procesada — siempre antes de los checks de parada,
+		// de modo que la generación que gatilla la terminación también se reporta.
 		if e.cfg.OnGeneration != nil {
 			e.cfg.OnGeneration(gen, globalBest)
 		}
+
+		generationsRun = gen
+
+		// Checks de parada anticipada — semántica OR, TargetMSE primero.
+		if e.cfg.TargetMSEEnabled && globalBest.Result.MSE <= e.cfg.TargetMSE {
+			break
+		}
+		if e.cfg.StagnationLimit > 0 && stagnationCount >= e.cfg.StagnationLimit {
+			break
+		}
 	}
 
-	// Evaluar sobre el dataset de validación exactamente una vez, después
-	// de que la evolución terminó. lambda=0: MSE puro sin penalización de
-	// complejidad (el spec reporta "Validation MSE", no "Validation Fitness").
-	// Esta evaluación no modifica el RNG ni los resultados de entrenamiento.
+	globalBest.GenerationsRun = generationsRun
+	return e.finalize(&globalBest)
+}
+
+// finalize evalúa el dataset de validación sobre globalBest y retorna el resultado.
+// Se llama siempre al final de Run(), independientemente del motivo de terminación.
+// lambda=0: MSE puro sin penalización de complejidad (el spec reporta "Validation MSE").
+// Esta evaluación no modifica el RNG ni los resultados de entrenamiento.
+func (e *Evolution) finalize(globalBest *Individual) (*Individual, error) {
 	if e.val != nil {
 		valResult, err := fitness.Evaluate(globalBest.Expr, e.val, 0)
 		if err != nil {
@@ -132,8 +205,7 @@ func (e *Evolution) Run() (*Individual, error) {
 		}
 		globalBest.ValidationResult = &valResult
 	}
-
-	return &globalBest, nil
+	return globalBest, nil
 }
 
 // NextGeneration construye la siguiente generación aplicando elitismo, crossover
@@ -152,8 +224,9 @@ func (e *Evolution) Run() (*Individual, error) {
 func (e *Evolution) NextGeneration(pop []Individual) []Individual {
 	sortByFitness(pop)
 
-	// Fase 1a — élites: se copian con sus resultados existentes.
-	elites := e.cfg.eliteCount()
+	// Fase 1a — élites: se copian con sus resultados existentes (sin re-evaluar).
+	// EliteCount() es la fuente única de verdad para este cálculo.
+	elites := e.cfg.EliteCount()
 	next := make([]Individual, 0, e.cfg.PopulationSize)
 	for i := 0; i < elites && i < len(pop); i++ {
 		next = append(next, cloneIndividual(pop[i]))

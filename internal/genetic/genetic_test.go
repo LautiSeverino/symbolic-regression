@@ -745,3 +745,466 @@ func TestValidationEvaluate_PartialInvalid(t *testing.T) {
 			result.Fitness, result.MSE)
 	}
 }
+
+// ─── Helpers Phase 14 ────────────────────────────────────────────────────
+
+// stagnationTestCfg devuelve una Config con MutationRate=0 y CrossoverRate=0.
+// Con estas tasas, todos los hijos son copias exactas de individuos seleccionados;
+// ninguna generación puede producir un individuo mejor que el mejor actual.
+// Por lo tanto stagnationCount incrementa cada generación de forma determinista.
+func stagnationTestCfg(limit int) genetic.Config {
+	return genetic.Config{
+		PopulationSize:  20,
+		Generations:     100,
+		TournamentSize:  2,
+		ElitismRate:     0.05,
+		MutationRate:    0, // sin mutación → hijos son copias exactas
+		CrossoverRate:   0, // sin crossover → hijos son copias exactas
+		Lambda:          0.01,
+		Seed:            42,
+		Workers:         1,
+		StagnationLimit: limit,
+		StagnationDelta: 0,
+		GenConfig: generator.Config{
+			MaxDepth:            3,
+			MaxNodes:            10,
+			AllowedBinaryOps:    []expression.NodeType{expression.NodeAdd, expression.NodeMul},
+			AllowedUnaryOps:     nil,
+			ConstantMin:         -5,
+			ConstantMax:         5,
+			VariableProbability: 0.5,
+			TerminalProbability: 0.3,
+			Seed:                42,
+		},
+	}
+}
+
+// ─── Validación de Config — campos nuevos ────────────────────────────────
+
+func TestConfig_Validate_TargetMSE_NaN_AlwaysError(t *testing.T) {
+	// NaN se rechaza siempre, sin importar TargetMSEEnabled.
+	for _, enabled := range []bool{false, true} {
+		cfg := testCfg()
+		cfg.TargetMSEEnabled = enabled
+		cfg.TargetMSE = math.NaN()
+		_, err := genetic.NewEvolution(cfg, testDS(), nil)
+		if err == nil {
+			t.Errorf("TargetMSEEnabled=%v, TargetMSE=NaN: se esperaba error, se obtuvo nil", enabled)
+		}
+	}
+}
+
+func TestConfig_Validate_TargetMSE_Enabled_NegativeError(t *testing.T) {
+	cfg := testCfg()
+	cfg.TargetMSEEnabled = true
+	cfg.TargetMSE = -1
+	_, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err == nil {
+		t.Error("TargetMSEEnabled=true, TargetMSE=-1: se esperaba error")
+	}
+}
+
+func TestConfig_Validate_TargetMSE_Enabled_PlusInfError(t *testing.T) {
+	cfg := testCfg()
+	cfg.TargetMSEEnabled = true
+	cfg.TargetMSE = math.Inf(1)
+	_, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err == nil {
+		t.Error("TargetMSEEnabled=true, TargetMSE=+Inf: se esperaba error")
+	}
+}
+
+func TestConfig_Validate_TargetMSE_Enabled_ZeroValid(t *testing.T) {
+	// MSE=0 es un objetivo legítimo (alcanzable en datasets sintéticos exactos).
+	cfg := testCfg()
+	cfg.TargetMSEEnabled = true
+	cfg.TargetMSE = 0
+	_, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err != nil {
+		t.Errorf("TargetMSEEnabled=true, TargetMSE=0: error inesperado: %v", err)
+	}
+}
+
+func TestConfig_Validate_TargetMSE_Disabled_ValueIgnored(t *testing.T) {
+	// Con TargetMSEEnabled=false, cualquier valor (excepto NaN) es aceptado.
+	cfg := testCfg()
+	cfg.TargetMSEEnabled = false
+	cfg.TargetMSE = -99
+	_, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err != nil {
+		t.Errorf("TargetMSEEnabled=false, TargetMSE=-99: error inesperado: %v", err)
+	}
+}
+
+func TestConfig_Validate_TargetMSE_Disabled_NegInfIgnored(t *testing.T) {
+	// -Inf con TargetMSEEnabled=false: el valor es ignorado → válido.
+	cfg := testCfg()
+	cfg.TargetMSEEnabled = false
+	cfg.TargetMSE = math.Inf(-1)
+	_, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err != nil {
+		t.Errorf("TargetMSEEnabled=false, TargetMSE=-Inf: error inesperado: %v", err)
+	}
+}
+
+func TestConfig_Validate_StagnationLimit_NegativeError(t *testing.T) {
+	cfg := testCfg()
+	cfg.StagnationLimit = -1
+	_, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err == nil {
+		t.Error("StagnationLimit=-1: se esperaba error")
+	}
+}
+
+func TestConfig_Validate_StagnationLimit_ZeroValid(t *testing.T) {
+	cfg := testCfg()
+	cfg.StagnationLimit = 0
+	_, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err != nil {
+		t.Errorf("StagnationLimit=0: error inesperado: %v", err)
+	}
+}
+
+func TestConfig_Validate_StagnationDelta_NegativeError(t *testing.T) {
+	cfg := testCfg()
+	cfg.StagnationDelta = -0.1
+	_, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err == nil {
+		t.Error("StagnationDelta=-0.1: se esperaba error")
+	}
+}
+
+func TestConfig_Validate_StagnationDelta_NaNError(t *testing.T) {
+	cfg := testCfg()
+	cfg.StagnationDelta = math.NaN()
+	_, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err == nil {
+		t.Error("StagnationDelta=NaN: se esperaba error")
+	}
+}
+
+func TestConfig_Validate_StagnationDelta_ZeroValid(t *testing.T) {
+	cfg := testCfg()
+	cfg.StagnationDelta = 0
+	_, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err != nil {
+		t.Errorf("StagnationDelta=0: error inesperado: %v", err)
+	}
+}
+
+// ─── Compatibilidad hacia atrás — criterios deshabilitados ───────────────
+
+func TestEarlyStop_AllDisabled_RunsExactlyGenerations(t *testing.T) {
+	// Con TargetMSEEnabled=false y StagnationLimit=0 (zeros values del struct),
+	// el comportamiento debe ser idéntico al de Fase 13: corre exactamente
+	// cfg.Generations generaciones. Usa testCfg() que omite los campos nuevos.
+	cfg := testCfg() // TargetMSEEnabled=false, StagnationLimit=0 por zero value
+	cfg.Generations = 5
+
+	evol, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err != nil {
+		t.Fatalf("NewEvolution: %v", err)
+	}
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.GenerationsRun != 5 {
+		t.Errorf("GenerationsRun = %d, want 5 (criterios deshabilitados → runs completos)", best.GenerationsRun)
+	}
+}
+
+// ─── GenerationsRun ───────────────────────────────────────────────────────
+
+func TestGenerationsRun_ZeroDefaultValue(t *testing.T) {
+	// El zero value de Individual debe tener GenerationsRun = 0.
+	var ind genetic.Individual
+	if ind.GenerationsRun != 0 {
+		t.Errorf("GenerationsRun zero value = %d, want 0", ind.GenerationsRun)
+	}
+}
+
+func TestGenerationsRun_EqualToGenerations_WhenNoEarlyStop(t *testing.T) {
+	cfg := testCfg()
+	cfg.Generations = 7
+
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.GenerationsRun != 7 {
+		t.Errorf("GenerationsRun = %d, want 7", best.GenerationsRun)
+	}
+}
+
+// ─── TargetMSE en gen=0 ───────────────────────────────────────────────────
+
+func TestEarlyStop_TargetMSE_Gen0_Fires(t *testing.T) {
+	// math.MaxFloat64 es el mayor float64 finito. Cualquier MSE producido por
+	// fitness.Evaluate es <= math.MaxFloat64, así que el criterio siempre se
+	// cumple en gen=0 y el loop evolutivo nunca se ejecuta.
+	cfg := testCfg()
+	cfg.TargetMSEEnabled = true
+	cfg.TargetMSE = math.MaxFloat64
+	cfg.Generations = 50
+
+	evol, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err != nil {
+		t.Fatalf("NewEvolution: %v", err)
+	}
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.GenerationsRun != 0 {
+		t.Errorf("GenerationsRun = %d, want 0 (parada en gen=0)", best.GenerationsRun)
+	}
+}
+
+func TestEarlyStop_TargetMSE_Gen0_OnGenerationCalledOnce(t *testing.T) {
+	// La parada en gen=0 ocurre DESPUÉS de OnGeneration(0,...).
+	// Por lo tanto el callback debe haberse invocado exactamente una vez (gen=0).
+	cfg := testCfg()
+	cfg.TargetMSEEnabled = true
+	cfg.TargetMSE = math.MaxFloat64
+	cfg.Generations = 50
+
+	var gensCalled []int
+	cfg.OnGeneration = func(gen int, best genetic.Individual) {
+		gensCalled = append(gensCalled, gen)
+	}
+
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
+	_, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(gensCalled) != 1 {
+		t.Errorf("OnGeneration invocado %d veces, want 1 (solo gen=0)", len(gensCalled))
+	}
+	if len(gensCalled) == 1 && gensCalled[0] != 0 {
+		t.Errorf("OnGeneration invocado con gen=%d, want 0", gensCalled[0])
+	}
+}
+
+func TestEarlyStop_TargetMSE_Gen0_ValidationEvaluated(t *testing.T) {
+	// Validation debe evaluarse aunque el loop no haya corrido (GenerationsRun=0).
+	cfg := testCfg()
+	cfg.TargetMSEEnabled = true
+	cfg.TargetMSE = math.MaxFloat64
+
+	val := dataset.New([]dataset.Point{{X: 6, Y: 13}, {X: 7, Y: 15}})
+	evol, _ := genetic.NewEvolution(cfg, testDS(), val)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.GenerationsRun != 0 {
+		t.Errorf("GenerationsRun = %d, want 0", best.GenerationsRun)
+	}
+	if best.ValidationResult == nil {
+		t.Fatal("ValidationResult debe ser no-nil aunque el loop no haya corrido")
+	}
+	if math.IsNaN(best.ValidationResult.MSE) || math.IsInf(best.ValidationResult.MSE, 0) {
+		t.Errorf("ValidationResult.MSE no finito: %v", best.ValidationResult.MSE)
+	}
+}
+
+// ─── Estancamiento — determinista con MutationRate=0, CrossoverRate=0 ───
+
+func TestEarlyStop_Stagnation_Fires_AtExactLimit(t *testing.T) {
+	// Con MutationRate=0 y CrossoverRate=0 los hijos son copias exactas de
+	// individuos existentes; el globalBest nunca mejora. Por tanto
+	// stagnationCount incrementa cada generación y el loop termina exactamente
+	// en gen=StagnationLimit.
+	cfg := stagnationTestCfg(5)
+
+	evol, err := genetic.NewEvolution(cfg, testDS(), nil)
+	if err != nil {
+		t.Fatalf("NewEvolution: %v", err)
+	}
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.GenerationsRun != 5 {
+		t.Errorf("GenerationsRun = %d, want 5 (StagnationLimit=5, MutationRate=CrossoverRate=0)",
+			best.GenerationsRun)
+	}
+}
+
+func TestEarlyStop_Stagnation_Zero_DoesNotFire(t *testing.T) {
+	// StagnationLimit=0 deshabilita el criterio → corre hasta cfg.Generations.
+	cfg := stagnationTestCfg(0)
+	cfg.Generations = 5
+
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.GenerationsRun != 5 {
+		t.Errorf("GenerationsRun = %d, want 5 (StagnationLimit=0 deshabilitado)", best.GenerationsRun)
+	}
+}
+
+func TestEarlyStop_Stagnation_LimitOne_FiresAtFirstNonImprovement(t *testing.T) {
+	// StagnationLimit=1: para en la primera generación sin mejora.
+	// Con MutationRate=0 y CrossoverRate=0, eso ocurre en gen=1.
+	cfg := stagnationTestCfg(1)
+
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.GenerationsRun != 1 {
+		t.Errorf("GenerationsRun = %d, want 1 (StagnationLimit=1)", best.GenerationsRun)
+	}
+}
+
+func TestEarlyStop_Stagnation_Deterministic(t *testing.T) {
+	// Dos runs con la misma seed deben producir exactamente el mismo GenerationsRun.
+	cfg := stagnationTestCfg(5)
+
+	run := func() int {
+		evol, err := genetic.NewEvolution(cfg, testDS(), nil)
+		if err != nil {
+			t.Fatalf("NewEvolution: %v", err)
+		}
+		best, err := evol.Run()
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		return best.GenerationsRun
+	}
+
+	r1 := run()
+	r2 := run()
+	if r1 != r2 {
+		t.Errorf("GenerationsRun distinto entre runs: %d vs %d", r1, r2)
+	}
+}
+
+func TestEarlyStop_Stagnation_WorkersInvariant(t *testing.T) {
+	// El determinismo es independiente del número de Workers.
+	run := func(workers int) int {
+		cfg := stagnationTestCfg(5)
+		cfg.Workers = workers
+		evol, err := genetic.NewEvolution(cfg, testDS(), nil)
+		if err != nil {
+			t.Fatalf("NewEvolution workers=%d: %v", workers, err)
+		}
+		best, err := evol.Run()
+		if err != nil {
+			t.Fatalf("Run workers=%d: %v", workers, err)
+		}
+		return best.GenerationsRun
+	}
+
+	r1 := run(1)
+	r4 := run(4)
+	if r1 != r4 {
+		t.Errorf("GenerationsRun: Workers=1→%d, Workers=4→%d (deben ser iguales)", r1, r4)
+	}
+}
+
+// ─── Criterios simultáneos ────────────────────────────────────────────────
+
+func TestEarlyStop_TargetMSE_Gen0_Fires_BeforeLoop(t *testing.T) {
+	// Verifica que TargetMSE=math.MaxFloat64 para en gen=0 (antes del loop),
+	// independientemente de StagnationLimit. Este test no es sobre prioridad
+	// entre criterios dentro del loop (ambos se evalúan en el loop), sino sobre
+	// que el check de gen=0 impide que el loop se ejecute en absoluto.
+	cfg := stagnationTestCfg(5) // StagnationLimit=5
+	cfg.TargetMSEEnabled = true
+	cfg.TargetMSE = math.MaxFloat64
+	cfg.Generations = 100
+
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// TargetMSE se cumple en gen=0 → loop no ejecutado → GenerationsRun=0.
+	if best.GenerationsRun != 0 {
+		t.Errorf("GenerationsRun = %d, want 0 (TargetMSE=MaxFloat64 para en gen=0)", best.GenerationsRun)
+	}
+}
+
+func TestEarlyStop_OnlyStagnation_Fires(t *testing.T) {
+	// TargetMSE deshabilitado; solo estancamiento activo. Con MutationRate=0
+	// y CrossoverRate=0 el estancamiento dispara exactamente en gen=StagnationLimit.
+	cfg := stagnationTestCfg(3)
+	cfg.TargetMSEEnabled = false
+
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.GenerationsRun != 3 {
+		t.Errorf("GenerationsRun = %d, want 3 (StagnationLimit=3)", best.GenerationsRun)
+	}
+}
+
+// ─── Validación post early stop ───────────────────────────────────────────
+
+func TestEarlyStop_ValidationEvaluated_AfterGen0Stop(t *testing.T) {
+	cfg := testCfg()
+	cfg.TargetMSEEnabled = true
+	cfg.TargetMSE = math.MaxFloat64
+
+	val := dataset.New([]dataset.Point{{X: 6, Y: 13}, {X: 7, Y: 15}})
+	evol, _ := genetic.NewEvolution(cfg, testDS(), val)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.ValidationResult == nil {
+		t.Error("ValidationResult debe ser no-nil después de parada en gen=0")
+	}
+}
+
+func TestEarlyStop_ValidationEvaluated_AfterStagnationStop(t *testing.T) {
+	cfg := stagnationTestCfg(3)
+	val := dataset.New([]dataset.Point{{X: 6, Y: 13}, {X: 7, Y: 15}})
+
+	evol, err := genetic.NewEvolution(cfg, testDS(), val)
+	if err != nil {
+		t.Fatalf("NewEvolution: %v", err)
+	}
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if best.ValidationResult == nil {
+		t.Error("ValidationResult debe ser no-nil después de parada por estancamiento")
+	}
+	if math.IsNaN(best.ValidationResult.MSE) || math.IsInf(best.ValidationResult.MSE, 0) {
+		t.Errorf("ValidationResult.MSE no finito: %v", best.ValidationResult.MSE)
+	}
+}
+
+func TestEarlyStop_OnGeneration_CalledForTerminatingGeneration(t *testing.T) {
+	// La generación que gatilla el estancamiento debe ser reportada al callback
+	// antes de salir del loop.
+	cfg := stagnationTestCfg(3)
+
+	var lastGenCalled int
+	cfg.OnGeneration = func(gen int, best genetic.Individual) {
+		lastGenCalled = gen
+	}
+
+	evol, _ := genetic.NewEvolution(cfg, testDS(), nil)
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// La última generación llamada en el callback debe coincidir con GenerationsRun.
+	if lastGenCalled != best.GenerationsRun {
+		t.Errorf("última gen en callback = %d, GenerationsRun = %d (deben coincidir)",
+			lastGenCalled, best.GenerationsRun)
+	}
+}

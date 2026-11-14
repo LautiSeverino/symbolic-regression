@@ -175,3 +175,126 @@ func TestIntegration_LinearValidationFinite(t *testing.T) {
 		t.Errorf("Validation MSE no es finito: %v", best.ValidationResult.MSE)
 	}
 }
+
+// ─── Fase 14: tests de integración de parada anticipada ──────────────────
+
+func TestIntegration_EarlyStop_Stagnation_ValidationFires(t *testing.T) {
+	// Pipeline completo con parada por estancamiento.
+	// MutationRate=0 y CrossoverRate=0 garantizan que el estancamiento
+	// dispara exactamente en gen=StagnationLimit de forma determinista.
+	ds := dataset.Generate(func(x float64) float64 { return 2*x + 1 }, 1, 20, 20)
+	train, val, err := dataset.Split(ds, 0.80, 42)
+	if err != nil {
+		t.Fatalf("Split: %v", err)
+	}
+
+	cfg := genetic.Config{
+		PopulationSize:  50,
+		Generations:     100,
+		TournamentSize:  2,
+		ElitismRate:     0.05,
+		MutationRate:    0, // sin mutación → sin mejoras
+		CrossoverRate:   0, // sin crossover → sin mejoras
+		Lambda:          0.01,
+		Seed:            42,
+		Workers:         1,
+		StagnationLimit: 3,
+		StagnationDelta: 0,
+		GenConfig: generator.Config{
+			MaxDepth:            4,
+			MaxNodes:            15,
+			AllowedBinaryOps:    []expression.NodeType{expression.NodeAdd, expression.NodeMul},
+			AllowedUnaryOps:     nil,
+			ConstantMin:         -5,
+			ConstantMax:         5,
+			VariableProbability: 0.5,
+			TerminalProbability: 0.3,
+			Seed:                43,
+		},
+	}
+
+	evol, err := genetic.NewEvolution(cfg, train, val)
+	if err != nil {
+		t.Fatalf("NewEvolution: %v", err)
+	}
+	best, err := evol.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if best.GenerationsRun != 3 {
+		t.Errorf("GenerationsRun = %d, want 3 (StagnationLimit=3, sin mutación ni crossover)",
+			best.GenerationsRun)
+	}
+	if best.ValidationResult == nil {
+		t.Fatal("ValidationResult debe ser no-nil después de parada por estancamiento")
+	}
+	if math.IsNaN(best.ValidationResult.MSE) || math.IsInf(best.ValidationResult.MSE, 0) {
+		t.Errorf("ValidationResult.MSE no finito: %v", best.ValidationResult.MSE)
+	}
+
+	t.Logf("GenerationsRun : %d", best.GenerationsRun)
+	t.Logf("Expression     : %s", expression.Format(best.Expr))
+	t.Logf("Training MSE   : %f", best.Result.MSE)
+	t.Logf("Validation MSE : %f", best.ValidationResult.MSE)
+}
+
+func TestIntegration_EarlyStop_Reproducible(t *testing.T) {
+	// Misma seed con criterio de estancamiento activo → mismo GenerationsRun
+	// y misma expresión en dos runs consecutivos.
+	ds := dataset.Generate(func(x float64) float64 { return 2*x + 1 }, 1, 20, 20)
+	train, val, err := dataset.Split(ds, 0.80, 42)
+	if err != nil {
+		t.Fatalf("Split: %v", err)
+	}
+
+	cfg := genetic.Config{
+		PopulationSize:  50,
+		Generations:     100,
+		TournamentSize:  2,
+		ElitismRate:     0.05,
+		MutationRate:    0,
+		CrossoverRate:   0,
+		Lambda:          0.01,
+		Seed:            42,
+		Workers:         1,
+		StagnationLimit: 5,
+		StagnationDelta: 0,
+		GenConfig: generator.Config{
+			MaxDepth:            4,
+			MaxNodes:            15,
+			AllowedBinaryOps:    []expression.NodeType{expression.NodeAdd, expression.NodeMul},
+			AllowedUnaryOps:     nil,
+			ConstantMin:         -5,
+			ConstantMax:         5,
+			VariableProbability: 0.5,
+			TerminalProbability: 0.3,
+			Seed:                43,
+		},
+	}
+
+	run := func() (string, float64, int) {
+		evol, err := genetic.NewEvolution(cfg, train, val)
+		if err != nil {
+			t.Fatalf("NewEvolution: %v", err)
+		}
+		best, err := evol.Run()
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		return expression.Format(best.Expr), best.Result.Fitness, best.GenerationsRun
+	}
+
+	expr1, fit1, gens1 := run()
+	expr2, fit2, gens2 := run()
+
+	if expr1 != expr2 {
+		t.Errorf("misma seed → expresiones distintas:\n  %s\n  %s", expr1, expr2)
+	}
+	if fit1 != fit2 {
+		t.Errorf("misma seed → fitness distintos: %v vs %v", fit1, fit2)
+	}
+	if gens1 != gens2 {
+		t.Errorf("misma seed → GenerationsRun distintos: %d vs %d", gens1, gens2)
+	}
+}
