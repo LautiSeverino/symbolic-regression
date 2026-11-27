@@ -17,3 +17,13 @@ coverage.out
 
 # Local environment
 .env
+
+# Compiled benchmark binary
+symbolic-regression
+
+# Benchmark intermediate results (commit only the final report)
+benchmarks/results/*.txt
+benchmarks/results/*.csv
+benchmarks/results/run_*/
+benchmarks/results/warmup_*/
+benchmarks/results/environment_*.txt

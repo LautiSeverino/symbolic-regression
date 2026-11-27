@@ -1,0 +1,2 @@
+# This file keeps benchmarks/results/ tracked by git.
+# Intermediate benchmark results are gitignored; commit only the final report.
